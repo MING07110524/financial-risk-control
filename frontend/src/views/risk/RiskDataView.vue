@@ -2,7 +2,7 @@
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { isAssessmentHttpMode, isRiskDataHttpMode, riskDataService, riskIndexService } from "@/services";
+import { isCoreWorkflowMockMode, riskDataService, riskIndexService } from "@/services";
 import type {
   RiskDataCreateDTO,
   RiskDataDetailVO,
@@ -61,7 +61,7 @@ const hasFilters = computed(() =>
 );
 const hasUnsavedChanges = computed(() => dialogVisible.value && formSnapshot.value !== createFormSnapshot());
 const showReassessmentHint = computed(() => formMode.value === "edit" && dialogRecordStatus.value === 1);
-const isHybridMode = computed(() => isRiskDataHttpMode && !isAssessmentHttpMode);
+const isHybridMode = computed(() => isCoreWorkflowMockMode);
 
 function createEmptyIndexValues(): RiskDataFormIndexItem[] {
   return enabledIndexes.value.map((item) => ({

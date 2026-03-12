@@ -200,7 +200,7 @@ public class RiskDemoStore {
         riskRulesByIndexId.put(1L, List.of(
                 rule(1L, 1L, "负债率", "0", "40", "20", "LOW"),
                 rule(2L, 1L, "负债率", "40.01", "70", "60", "MEDIUM"),
-                rule(3L, 1L, "负债率", "70.01", "100", "90", "HIGH")
+                rule(3L, 1L, "负债率", "70.01", "999", "90", "HIGH")
         ));
         riskRulesByIndexId.put(2L, List.of(
                 rule(4L, 2L, "现金流覆盖率", "0", "0.99", "90", "HIGH"),
@@ -210,7 +210,7 @@ public class RiskDemoStore {
         riskRulesByIndexId.put(3L, List.of(
                 rule(7L, 3L, "逾期次数", "0", "0", "20", "LOW"),
                 rule(8L, 3L, "逾期次数", "1", "2", "60", "MEDIUM"),
-                rule(9L, 3L, "逾期次数", "3", "99", "90", "HIGH")
+                rule(9L, 3L, "逾期次数", "3", "999", "90", "HIGH")
         ));
         riskRulesByIndexId.put(4L, List.of(
                 rule(10L, 4L, "抵押覆盖率", "0", "99.99", "90", "HIGH"),

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { AppServiceError } from "@/utils/result";
 import { clearToken, clearUser, getToken } from "@/utils/storage";
 
 const client = axios.create({
@@ -22,6 +23,13 @@ client.interceptors.response.use(
       clearUser();
       window.location.href = "/login";
     }
+
+    const code = error.response?.data?.code;
+    const message = error.response?.data?.message;
+    if (typeof code === "number" && typeof message === "string" && message.trim()) {
+      return Promise.reject(new AppServiceError(code, message));
+    }
+
     return Promise.reject(error);
   },
 );
