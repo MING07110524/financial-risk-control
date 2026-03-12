@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
+import type { EChartsOption } from "echarts";
+import AppChart from "@/components/AppChart.vue";
 import { statisticsService } from "@/services";
 import type {
   HandleSummaryStatisticsVO,
@@ -27,6 +29,9 @@ const handleSummary = ref<HandleSummaryStatisticsVO[]>([]);
 
 const totalRiskCount = computed(() => riskLevelStats.value.reduce((sum, item) => sum + item.count, 0));
 const totalWarningCount = computed(() => warningTrend.value.reduce((sum, item) => sum + item.total, 0));
+const pendingWarningCount = computed(() => handleSummary.value.find((item) => item.warningStatus === 0)?.count ?? 0);
+const handledWarningCount = computed(() => handleSummary.value.find((item) => item.warningStatus === 2)?.count ?? 0);
+const hasFilters = computed(() => Boolean(dateRange.value.length || query.riskLevel || query.warningStatus !== ""));
 
 function syncDateRangeToQuery() {
   if (dateRange.value.length === 2) {
@@ -39,6 +44,9 @@ function syncDateRangeToQuery() {
 }
 
 async function loadStatistics() {
+  // Keep all charts sourced from the same query object so filtering one view
+  // never makes different panels disagree with each other. / 让所有图表都从同一份
+  // 查询条件取数，避免筛选后不同面板之间出现口径不一致。
   syncDateRangeToQuery();
   loading.value = true;
   try {
@@ -77,6 +85,121 @@ function statusTagType(status: WarningStatus) {
   return warningStatusTagType(status);
 }
 
+const riskLevelChartOption = computed<EChartsOption>(() => ({
+  tooltip: { trigger: "item" as const },
+  legend: {
+    orient: "vertical",
+    right: 0,
+    top: "middle",
+    icon: "circle",
+    textStyle: { color: "#58738f" },
+  },
+  series: [
+    {
+      type: "pie" as const,
+      radius: ["42%", "72%"],
+      center: ["34%", "50%"],
+      label: {
+        formatter: "{b}\n{d}%",
+        color: "#17324d",
+      },
+      data: riskLevelStats.value.map((item) => ({
+        name: riskLevelLabel(item.riskLevel),
+        value: item.count,
+      })),
+      color: ["#2e7d32", "#d97706", "#c62828"],
+    },
+  ],
+}));
+
+const warningTrendChartOption = computed<EChartsOption>(() => ({
+  tooltip: { trigger: "axis" as const },
+  legend: {
+    top: 0,
+    textStyle: { color: "#58738f" },
+  },
+  grid: {
+    left: 20,
+    right: 20,
+    top: 40,
+    bottom: 24,
+    containLabel: true,
+  },
+  xAxis: {
+    type: "category" as const,
+    data: warningTrend.value.map((item) => item.date.slice(5)),
+    axisLine: { lineStyle: { color: "#d8e2eb" } },
+    axisLabel: { color: "#58738f" },
+  },
+  yAxis: {
+    type: "value" as const,
+    axisLine: { show: false },
+    splitLine: { lineStyle: { color: "#eef3f7" } },
+    axisLabel: { color: "#58738f" },
+  },
+  series: [
+    {
+      name: "预警总数",
+      type: "line" as const,
+      smooth: true,
+      symbolSize: 8,
+      data: warningTrend.value.map((item) => item.total),
+      color: "#0f766e",
+      areaStyle: {
+        color: "rgba(15, 118, 110, 0.12)",
+      },
+    },
+    {
+      name: "已处理",
+      type: "line" as const,
+      smooth: true,
+      symbolSize: 8,
+      data: warningTrend.value.map((item) => item.handled),
+      color: "#2563eb",
+    },
+    {
+      name: "未完成",
+      type: "line" as const,
+      smooth: true,
+      symbolSize: 8,
+      data: warningTrend.value.map((item) => item.pending),
+      color: "#f59e0b",
+    },
+  ],
+}));
+
+const handleSummaryChartOption = computed<EChartsOption>(() => ({
+  tooltip: { trigger: "item" as const },
+  series: [
+    {
+      type: "pie" as const,
+      radius: ["45%", "68%"],
+      center: ["50%", "46%"],
+      label: {
+        formatter: "{b}\n{c}",
+        color: "#17324d",
+      },
+      data: handleSummary.value.map((item) => ({
+        name: warningStatusLabel(item.warningStatus),
+        value: item.count,
+      })),
+      color: ["#ef4444", "#f59e0b", "#10b981"],
+    },
+  ],
+}));
+
+// Keep the headline insight readable for a non-technical audience as well as
+// developers. / 用一句话概括当前统计状态，让答辩或演示时不需要先解释图表。
+const analyticsInsight = computed(() => {
+  if (totalWarningCount.value === 0) {
+    return "当前没有预警，系统处于平稳状态。";
+  }
+  if (pendingWarningCount.value > 0) {
+    return `当前共有 ${totalWarningCount.value} 条预警，其中 ${pendingWarningCount.value} 条尚未完成处理，建议优先跟进。`;
+  }
+  return `当前共有 ${totalWarningCount.value} 条预警，且都已完成处理，可继续关注风险等级分布变化。`;
+});
+
 onMounted(() => {
   void loadStatistics();
 });
@@ -91,6 +214,16 @@ onMounted(() => {
       </div>
       <el-button :loading="loading" @click="loadStatistics">刷新统计</el-button>
     </div>
+
+    <el-card class="section-card analytics-banner" shadow="never">
+      <div class="analytics-banner__content">
+        <div>
+          <h2 class="analytics-banner__title">当前统计洞察</h2>
+          <p class="analytics-banner__text">{{ analyticsInsight }}</p>
+        </div>
+        <el-tag type="warning" effect="dark">{{ hasFilters ? "已按筛选条件查看" : "全量视图" }}</el-tag>
+      </div>
+    </el-card>
 
     <el-card class="section-card" shadow="never">
       <div class="filter-grid">
@@ -120,21 +253,25 @@ onMounted(() => {
     </el-card>
 
     <section class="stat-grid">
-      <article class="section-card stat-card">
+      <article class="section-card stat-card stat-card--navy">
         <div class="stat-card__label">有效评估总数</div>
         <div class="stat-card__value">{{ totalRiskCount }}</div>
+        <div class="stat-card__note">用于观察风险等级分布基础盘面</div>
       </article>
-      <article class="section-card stat-card">
+      <article class="section-card stat-card stat-card--teal">
         <div class="stat-card__label">预警总数</div>
         <div class="stat-card__value">{{ totalWarningCount }}</div>
+        <div class="stat-card__note">包含处理中与已处理的全部预警</div>
       </article>
-      <article class="section-card stat-card">
+      <article class="section-card stat-card stat-card--amber">
         <div class="stat-card__label">待处理预警</div>
-        <div class="stat-card__value">{{ handleSummary.find((item) => item.warningStatus === 0)?.count ?? 0 }}</div>
+        <div class="stat-card__value">{{ pendingWarningCount }}</div>
+        <div class="stat-card__note">优先跟进这些预警项</div>
       </article>
-      <article class="section-card stat-card">
+      <article class="section-card stat-card stat-card--green">
         <div class="stat-card__label">已处理预警</div>
-        <div class="stat-card__value">{{ handleSummary.find((item) => item.warningStatus === 2)?.count ?? 0 }}</div>
+        <div class="stat-card__value">{{ handledWarningCount }}</div>
+        <div class="stat-card__note">已完成处置闭环的预警数量</div>
       </article>
     </section>
 
@@ -142,37 +279,56 @@ onMounted(() => {
       <el-col :xs="24" :xl="8">
         <el-card class="section-card" shadow="never">
           <template #header>风险等级分布</template>
+          <AppChart :option="riskLevelChartOption" height="300px" />
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :xl="8">
+        <el-card class="section-card" shadow="never">
+          <template #header>预警趋势</template>
+          <AppChart :option="warningTrendChartOption" height="300px" />
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :xl="8">
+        <el-card class="section-card" shadow="never">
+          <template #header>处置汇总</template>
+          <AppChart :option="handleSummaryChartOption" height="300px" />
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="20">
+      <el-col :xs="24" :xl="12">
+        <el-card class="section-card" shadow="never">
+          <template #header>风险等级占比说明</template>
           <div class="summary-list">
             <div v-for="item in riskLevelStats" :key="item.riskLevel" class="summary-item">
               <div class="summary-item__row">
                 <strong>{{ riskLevelLabel(item.riskLevel) }}</strong>
-                <span>{{ item.count }} 条</span>
+                <span>{{ item.count }} 条 · {{ getRatio(item.count, totalRiskCount) }}%</span>
               </div>
               <el-progress :percentage="getRatio(item.count, totalRiskCount)" :stroke-width="10" />
             </div>
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="24" :xl="8">
+      <el-col :xs="24" :xl="12">
         <el-card class="section-card" shadow="never">
-          <template #header>预警趋势</template>
-          <el-table :data="warningTrend" size="small">
-            <el-table-column prop="date" label="日期" min-width="110" />
-            <el-table-column prop="total" label="总数" min-width="70" />
-            <el-table-column prop="pending" label="未完成" min-width="80" />
-            <el-table-column prop="handled" label="已处理" min-width="80" />
-          </el-table>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :xl="8">
-        <el-card class="section-card" shadow="never">
-          <template #header>处置汇总</template>
+          <template #header>预警处置明细</template>
           <div class="summary-list">
             <div v-for="item in handleSummary" :key="item.warningStatus" class="summary-item summary-item--plain">
               <div class="summary-item__row">
                 <el-tag :type="statusTagType(item.warningStatus)">{{ warningStatusLabel(item.warningStatus) }}</el-tag>
                 <strong>{{ item.count }} 条</strong>
               </div>
+              <span class="summary-item__caption">
+                {{
+                  item.warningStatus === 0
+                    ? "尚未进入处理动作"
+                    : item.warningStatus === 1
+                      ? "已有处理动作，但尚未结案"
+                      : "已完成处置并保留历史记录"
+                }}
+              </span>
             </div>
           </div>
         </el-card>
@@ -182,6 +338,23 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.analytics-banner__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.analytics-banner__title {
+  margin: 0;
+  color: #0f2742;
+}
+
+.analytics-banner__text {
+  margin: 8px 0 0;
+  color: #58738f;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr 1fr auto;
@@ -191,6 +364,40 @@ onMounted(() => {
 .filter-actions {
   display: flex;
   gap: 10px;
+}
+
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+}
+
+.stat-card--navy::before {
+  background: linear-gradient(180deg, #1d4ed8, #2563eb);
+}
+
+.stat-card--teal::before {
+  background: linear-gradient(180deg, #0f766e, #14b8a6);
+}
+
+.stat-card--amber::before {
+  background: linear-gradient(180deg, #d97706, #f59e0b);
+}
+
+.stat-card--green::before {
+  background: linear-gradient(180deg, #059669, #10b981);
+}
+
+.stat-card__note {
+  margin-top: 10px;
+  color: #58738f;
+  font-size: 13px;
 }
 
 .summary-list {
@@ -216,9 +423,16 @@ onMounted(() => {
   gap: 10px;
 }
 
+.summary-item__caption {
+  color: #58738f;
+  font-size: 13px;
+}
+
 @media (max-width: 960px) {
+  .analytics-banner__content,
   .filter-grid {
     grid-template-columns: 1fr;
+    display: grid;
   }
 }
 </style>
