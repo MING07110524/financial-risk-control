@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ArrowRightBold, DataAnalysis, Monitor, Notebook, PieChart, RefreshRight, UserFilled, Warning } from "@element-plus/icons-vue";
+import { ArrowRightBold, DataAnalysis, Monitor, Notebook, PieChart, QuestionFilled, RefreshRight, UserFilled, Warning } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import DemoGuideDrawer from "@/components/DemoGuideDrawer.vue";
 import { isMockMode, systemService } from "@/services";
 import { useUserStore } from "@/stores/user";
 import { getErrorMessage } from "@/utils/result";
@@ -10,6 +11,7 @@ import { getErrorMessage } from "@/utils/result";
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
+const guideVisible = ref(false);
 
 const iconMap = {
   dashboard: Monitor,
@@ -96,6 +98,7 @@ async function handleResetDemoData() {
         <div class="layout-header__actions">
           <el-tag v-if="isMockMode" type="warning" effect="dark">Mock 模式</el-tag>
           <span class="layout-header__user">{{ userStore.currentUser?.realName ?? "未知用户" }}</span>
+          <el-button plain :icon="QuestionFilled" @click="guideVisible = true">演示路径</el-button>
           <el-button v-if="isMockMode" plain :icon="RefreshRight" @click="handleResetDemoData">重置演示数据</el-button>
           <el-button type="primary" plain @click="handleLogout">退出登录</el-button>
         </div>
@@ -106,6 +109,7 @@ async function handleResetDemoData() {
       </el-main>
     </el-container>
   </el-container>
+  <DemoGuideDrawer v-model="guideVisible" :role-code="userStore.roleCode" />
 </template>
 
 <style scoped>

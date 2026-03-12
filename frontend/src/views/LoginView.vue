@@ -54,6 +54,12 @@ async function submitDemoLogin(username: string) {
         <strong>演示说明</strong>
         <span>支持三种角色登录。风控人员可完整操作，管理人员与管理员分别提供只读视角。</span>
       </div>
+      <div class="login-copy__panel login-copy__panel--guide">
+        <strong>推荐体验顺序</strong>
+        <span>risk-demo：风险数据 -> 风险评估 -> 预警处理 -> 统计回流</span>
+        <span>manager-demo：预警详情 -> 统计分析 -> 首页洞察</span>
+        <span>admin-demo：指标规则 -> 用户管理占位 -> 日志占位</span>
+      </div>
       <div v-if="isMockMode" class="demo-accounts">
         <div class="demo-accounts__header">
           <strong>演示账号快捷入口</strong>
@@ -141,6 +147,10 @@ async function submitDemoLogin(username: string) {
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(15, 39, 66, 0.08);
+}
+
+.login-copy__panel--guide span {
+  font-size: 14px;
 }
 
 .demo-accounts {

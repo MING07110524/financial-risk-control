@@ -1,5 +1,52 @@
-# Vue 3 + TypeScript + Vite
+# 金融风控前端演示说明
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+## 启动
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+```powershell
+cd E:\Project\fengxian031117\frontend
+npm install
+npm run dev
+```
+
+默认启用 `Mock` 模式，环境开关在 `.env`：
+
+```env
+VITE_USE_MOCK=true
+```
+
+## 演示账号
+
+- `risk-demo`：风控人员，体验完整业务闭环
+- `manager-demo`：管理人员，只读查看预警与统计
+- `admin-demo`：管理员，查看指标规则和后台入口占位
+
+## 推荐演示路径
+
+### 风控人员
+
+1. 登录 `risk-demo`
+2. 进入“风险数据”新增或编辑一条业务
+3. 点击“去评估 / 重新评估”
+4. 在“风险评估”页执行评估并查看评分详情
+5. 进入“预警管理”提交处理意见
+6. 回到“仪表盘”或“统计分析”刷新数据，确认结果回流
+
+### 管理人员
+
+1. 登录 `manager-demo`
+2. 在首页查看角色关注点和图表
+3. 进入“预警管理”查看预警详情和处理时间线
+4. 进入“统计分析”切换筛选，确认图表同步变化
+
+### 管理员
+
+1. 登录 `admin-demo`
+2. 在首页查看管理员职责说明
+3. 进入“指标规则”查看指标、权重和评分区间
+4. 查看“用户管理”和“操作日志”占位页，了解后续真实后台能力落点
+
+## 体验提示
+
+- 顶部“演示路径”按钮会按当前角色展示推荐操作顺序
+- 顶部“重置演示数据”会恢复 mock 数据，但保留当前登录态
+- 统计图表使用 `ECharts`，构建时可能出现 chunk size warning，不影响本地运行

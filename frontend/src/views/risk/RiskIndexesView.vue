@@ -53,6 +53,44 @@ onMounted(() => {
       <el-tag type="info">只读模式</el-tag>
     </div>
 
+    <el-alert
+      type="info"
+      :closable="false"
+      title="当前页面用于说明评估依据：风控主线里的总分、风险等级和预警触发，都来自这里的指标权重与评分区间。"
+    />
+
+    <el-row :gutter="20">
+      <el-col :xs="24" :xl="8">
+        <el-card class="section-card" shadow="never">
+          <template #header>本页怎么看</template>
+          <div class="guide-list">
+            <p>1. 先看左侧“风险指标”，确认有哪些指标参与评分。</p>
+            <p>2. 再看右侧“评分规则”，确认每个指标值会映射成什么分值。</p>
+            <p>3. 权重与规则共同决定风险评估页里的总分与预警等级。</p>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :xl="16">
+        <el-card class="section-card" shadow="never">
+          <template #header>当前规则说明</template>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <span>启用指标数</span>
+              <strong>{{ indexes.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <span>当前查看指标</span>
+              <strong>{{ indexes.find((item) => item.id === selectedIndexId)?.indexName ?? "未选择" }}</strong>
+            </div>
+            <div class="summary-item">
+              <span>规则用途</span>
+              <strong>决定原始得分与建议预警等级</strong>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-row :gutter="20">
       <el-col :xs="24" :xl="12">
         <el-card class="section-card" shadow="never">
@@ -90,3 +128,39 @@ onMounted(() => {
     </el-row>
   </div>
 </template>
+
+<style scoped>
+.guide-list,
+.summary-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.guide-list p {
+  margin: 0;
+  color: #58738f;
+}
+
+.summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.summary-item {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(247, 250, 252, 0.96);
+}
+
+.summary-item span {
+  color: #58738f;
+  font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
