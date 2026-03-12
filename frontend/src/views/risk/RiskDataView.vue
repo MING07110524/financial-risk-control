@@ -2,7 +2,7 @@
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { riskDataService, riskIndexService } from "@/services";
+import { isMockMode, isRiskDataHttpMode, riskDataService, riskIndexService } from "@/services";
 import type {
   RiskDataCreateDTO,
   RiskDataDetailVO,
@@ -61,6 +61,7 @@ const hasFilters = computed(() =>
 );
 const hasUnsavedChanges = computed(() => dialogVisible.value && formSnapshot.value !== createFormSnapshot());
 const showReassessmentHint = computed(() => formMode.value === "edit" && dialogRecordStatus.value === 1);
+const isHybridMode = computed(() => isRiskDataHttpMode && isMockMode);
 
 function createEmptyIndexValues(): RiskDataFormIndexItem[] {
   return enabledIndexes.value.map((item) => ({
@@ -100,6 +101,9 @@ function syncFormSnapshot() {
 }
 
 function buildGoAssessLabel(status: RiskDataStatus): string {
+  if (isHybridMode.value) {
+    return "评估下一阶段接通";
+  }
   if (status === 1) {
     return "重新评估";
   }
@@ -162,6 +166,11 @@ async function closeDialog() {
 }
 
 async function promptNextStep(savedData: RiskDataDetailVO, mode: "create" | "edit") {
+  if (isHybridMode.value) {
+    ElMessage.info("风险数据已经保存到真实后端。本轮请先验证真实增删改查，评估状态同步将在下一阶段接通。");
+    return;
+  }
+
   // Offer the next logical action right after save, because risk data entry is
   // usually followed by assessment in this demo flow. / 保存后直接提供“去评估”
   // 是为了让录入 -> 评估这条最小闭环更顺，不需要用户自己再回列表找按钮。
@@ -362,6 +371,10 @@ async function removeRiskData(row: RiskDataVO) {
 }
 
 function goToAssess(row: RiskDataVO) {
+  if (isHybridMode.value) {
+    ElMessage.warning("当前已切到真实风险数据接口，但评估与预警仍使用 mock，跨模块状态同步将在下一阶段接通。");
+    return;
+  }
   void router.push({
     path: "/risk/assessments",
     query: {
@@ -387,6 +400,13 @@ onMounted(() => {
       </div>
       <el-button type="primary" @click="openCreateDialog">新增风险数据</el-button>
     </div>
+
+    <el-alert
+      v-if="isHybridMode"
+      type="success"
+      :closable="false"
+      title="当前页面已切到真实后端接口：列表、详情、新增、编辑、删除都来自 backend。评估与预警仍是 mock，本轮先专注验证真实风险数据模块。"
+    />
 
     <el-card class="section-card" shadow="never">
       <div class="filter-grid">
@@ -431,7 +451,7 @@ onMounted(() => {
             <div class="row-actions">
               <el-button link type="primary" @click="openDetailDialog(row)">详情</el-button>
               <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
-              <el-button link type="warning" @click="goToAssess(row)">{{ buildGoAssessLabel(row.dataStatus) }}</el-button>
+              <el-button link type="warning" :disabled="isHybridMode" @click="goToAssess(row)">{{ buildGoAssessLabel(row.dataStatus) }}</el-button>
               <el-button link type="danger" @click="removeRiskData(row)">删除</el-button>
             </div>
           </template>
@@ -465,6 +485,13 @@ onMounted(() => {
           :closable="false"
           class="dialog-alert"
           title="当前业务已有有效评估记录。保存修改后，这条业务会自动进入“待重评”状态。"
+        />
+        <el-alert
+          v-if="isHybridMode"
+          type="info"
+          :closable="false"
+          class="dialog-alert"
+          title="当前保存动作会写入真实后端。评估与预警状态仍由下一阶段接通，不在本轮验收范围内。"
         />
         <el-alert
           v-else-if="formMode === 'create'"
@@ -576,7 +603,7 @@ onMounted(() => {
         </el-table>
 
         <div class="detail-actions">
-          <el-button type="primary" @click="goToAssess(detail)">去评估</el-button>
+          <el-button type="primary" :disabled="isHybridMode" @click="goToAssess(detail)">去评估</el-button>
           <el-button @click="detailVisible = false">关闭</el-button>
         </div>
       </div>

@@ -3,6 +3,8 @@ import { createMockServiceBundle } from "@/services/mock";
 
 const useMock = import.meta.env.VITE_USE_MOCK !== "false";
 const useHttpAuth = import.meta.env.VITE_AUTH_USE_HTTP === "true";
+const useHttpRiskData = import.meta.env.VITE_RISK_DATA_USE_HTTP === "true";
+const useHttpRiskIndex = import.meta.env.VITE_RISK_INDEX_USE_HTTP === "true";
 const mockBundle = createMockServiceBundle();
 const httpBundle = createHttpServiceBundle();
 // Keep business modules on mock while only authentication talks to the real
@@ -13,11 +15,13 @@ const bundle = useMock ? mockBundle : httpBundle;
 
 export const authService = useHttpAuth ? httpBundle.authService : bundle.authService;
 export const dashboardService = bundle.dashboardService;
-export const riskIndexService = bundle.riskIndexService;
-export const riskDataService = bundle.riskDataService;
+export const riskIndexService = useHttpRiskIndex ? httpBundle.riskIndexService : bundle.riskIndexService;
+export const riskDataService = useHttpRiskData ? httpBundle.riskDataService : bundle.riskDataService;
 export const assessmentService = bundle.assessmentService;
 export const warningService = bundle.warningService;
 export const statisticsService = bundle.statisticsService;
 export const systemService = bundle.systemService;
 export const isMockMode = useMock;
 export const isAuthMockMode = !useHttpAuth;
+export const isRiskDataHttpMode = useHttpRiskData;
+export const isRiskIndexHttpMode = useHttpRiskIndex;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { onMounted, ref } from "vue";
-import { riskIndexService } from "@/services";
+import { isRiskIndexHttpMode, riskIndexService } from "@/services";
 import type { RiskIndexVO, RiskRuleVO } from "@/types/risk";
 import { riskLevelLabel, riskLevelTagType } from "@/utils/format";
 import { ensureSuccess, getErrorMessage } from "@/utils/result";
@@ -50,13 +50,15 @@ onMounted(() => {
         <h1 class="page-title">指标规则</h1>
         <p class="page-subtitle">管理员在第一轮只读查看预置指标与评分规则，这些规则会直接影响风控闭环。</p>
       </div>
-      <el-tag type="info">只读模式</el-tag>
+      <el-tag :type="isRiskIndexHttpMode ? 'success' : 'info'">{{ isRiskIndexHttpMode ? "真实接口" : "只读模式" }}</el-tag>
     </div>
 
     <el-alert
       type="info"
       :closable="false"
-      title="当前页面用于说明评估依据：风控主线里的总分、风险等级和预警触发，都来自这里的指标权重与评分区间。"
+      :title="isRiskIndexHttpMode
+        ? '当前页面已切到真实后端读取：指标、权重和评分区间都来自 backend。'
+        : '当前页面用于说明评估依据：风控主线里的总分、风险等级和预警触发，都来自这里的指标权重与评分区间。'"
     />
 
     <el-row :gutter="20">

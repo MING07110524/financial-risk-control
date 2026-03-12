@@ -1,4 +1,13 @@
 import { fetchCurrentUserApi, loginApi, logoutApi } from "@/api/auth";
+import {
+  createRiskDataApi,
+  deleteRiskDataApi,
+  getRiskDataDetailApi,
+  listRiskIndexesApi,
+  listRiskRulesApi,
+  pageRiskDataApi,
+  updateRiskDataApi,
+} from "@/api/risk";
 import type { Result } from "@/types/common";
 import type { ServiceBundle } from "@/services/contracts";
 
@@ -22,15 +31,15 @@ export function createHttpServiceBundle(): ServiceBundle {
       listRecentWarnings: () => notImplemented(),
     },
     riskIndexService: {
-      listRiskIndexes: () => notImplemented(),
-      listRiskRules: () => notImplemented(),
+      listRiskIndexes: listRiskIndexesApi,
+      listRiskRules: listRiskRulesApi,
     },
     riskDataService: {
-      pageRiskData: () => notImplemented(),
-      getRiskDataDetail: () => notImplemented(),
-      createRiskData: () => notImplemented(),
-      updateRiskData: () => notImplemented(),
-      deleteRiskData: () => notImplemented(),
+      pageRiskData: pageRiskDataApi,
+      getRiskDataDetail: getRiskDataDetailApi,
+      createRiskData: createRiskDataApi,
+      updateRiskData: updateRiskDataApi,
+      deleteRiskData: deleteRiskDataApi,
     },
     assessmentService: {
       pageAssessments: () => notImplemented(),
