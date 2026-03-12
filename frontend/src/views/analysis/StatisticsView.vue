@@ -210,7 +210,7 @@ onMounted(() => {
     <div class="page-header">
       <div>
         <h1 class="page-title">统计分析</h1>
-        <p class="page-subtitle">统计数据直接来自同一份 mock 业务数据，处理预警后这里会同步变化。</p>
+        <p class="page-subtitle">统计数据直接来自真实业务记录，处理预警后这里会同步变化。</p>
       </div>
       <el-button :loading="loading" @click="loadStatistics">刷新统计</el-button>
     </div>

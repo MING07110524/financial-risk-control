@@ -2,7 +2,7 @@
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { isMockMode, isRiskDataHttpMode, riskDataService, riskIndexService } from "@/services";
+import { isAssessmentHttpMode, isRiskDataHttpMode, riskDataService, riskIndexService } from "@/services";
 import type {
   RiskDataCreateDTO,
   RiskDataDetailVO,
@@ -61,7 +61,7 @@ const hasFilters = computed(() =>
 );
 const hasUnsavedChanges = computed(() => dialogVisible.value && formSnapshot.value !== createFormSnapshot());
 const showReassessmentHint = computed(() => formMode.value === "edit" && dialogRecordStatus.value === 1);
-const isHybridMode = computed(() => isRiskDataHttpMode && isMockMode);
+const isHybridMode = computed(() => isRiskDataHttpMode && !isAssessmentHttpMode);
 
 function createEmptyIndexValues(): RiskDataFormIndexItem[] {
   return enabledIndexes.value.map((item) => ({
@@ -372,7 +372,7 @@ async function removeRiskData(row: RiskDataVO) {
 
 function goToAssess(row: RiskDataVO) {
   if (isHybridMode.value) {
-    ElMessage.warning("当前已切到真实风险数据接口，但评估与预警仍使用 mock，跨模块状态同步将在下一阶段接通。");
+    ElMessage.warning("当前已切到真实风险数据接口，但评估与预警尚未同步切到真实后端，请在下一阶段继续联调。");
     return;
   }
   void router.push({

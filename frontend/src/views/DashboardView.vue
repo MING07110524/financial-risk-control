@@ -262,7 +262,7 @@ onMounted(loadDashboard);
       <div>
         <h1 class="page-title">仪表盘</h1>
         <p class="page-subtitle">
-          这里汇总了当前 mock 业务链路的核心结果，可以直接作为角色化演示入口。
+          这里汇总了当前真实业务链路的核心结果，可以直接作为角色化演示入口。
         </p>
       </div>
       <el-button :loading="loading" @click="loadDashboard">刷新数据</el-button>

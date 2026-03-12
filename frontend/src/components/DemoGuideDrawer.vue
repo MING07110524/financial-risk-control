@@ -6,13 +6,14 @@ const visible = defineModel<boolean>({ required: true });
 
 const props = defineProps<{
   roleCode: RoleCode | "";
+  showResetTip: boolean;
 }>();
 
-const commonSteps = [
+const commonSteps = computed(() => [
   "登录页直接选择演示账号，优先从 risk-demo 开始体验完整闭环。",
-  "如果中途想回到初始状态，可在右上角点击“重置演示数据”。",
   "每次处理完预警后，记得回到首页或统计页点“刷新数据”，观察数字和图表回流。",
-];
+  ...(props.showResetTip ? ["如果中途想回到初始状态，可在右上角点击“重置演示数据”。"] : []),
+]);
 
 // Build role-specific guidance so the same drawer can guide both product demos
 // and technical walkthroughs. / 用角色维度组织导览步骤，让同一个抽屉既能用于

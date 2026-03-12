@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DemoGuideDrawer from "@/components/DemoGuideDrawer.vue";
-import { isAuthMockMode, isMockMode, systemService } from "@/services";
+import { isAuthMockMode, isCoreWorkflowMockMode, isMockMode, systemService } from "@/services";
 import { useUserStore } from "@/stores/user";
 import { getErrorMessage } from "@/utils/result";
 
@@ -97,10 +97,11 @@ async function handleResetDemoData() {
         </div>
         <div class="layout-header__actions">
           <el-tag v-if="isMockMode && isAuthMockMode" type="warning" effect="dark">全 Mock 模式</el-tag>
-          <el-tag v-else-if="isMockMode" type="success" effect="dark">认证真实 / 业务 Mock</el-tag>
+          <el-tag v-else-if="isCoreWorkflowMockMode" type="success" effect="dark">认证真实 / 部分业务 Mock</el-tag>
+          <el-tag v-else type="success" effect="dark">核心链真实后端</el-tag>
           <span class="layout-header__user">{{ userStore.currentUser?.realName ?? "未知用户" }}</span>
           <el-button plain :icon="QuestionFilled" @click="guideVisible = true">演示路径</el-button>
-          <el-button v-if="isMockMode" plain :icon="RefreshRight" @click="handleResetDemoData">重置演示数据</el-button>
+          <el-button v-if="isMockMode && isCoreWorkflowMockMode" plain :icon="RefreshRight" @click="handleResetDemoData">重置演示数据</el-button>
           <el-button type="primary" plain @click="handleLogout">退出登录</el-button>
         </div>
       </el-header>
@@ -110,7 +111,11 @@ async function handleResetDemoData() {
       </el-main>
     </el-container>
   </el-container>
-  <DemoGuideDrawer v-model="guideVisible" :role-code="userStore.roleCode" />
+  <DemoGuideDrawer
+    v-model="guideVisible"
+    :role-code="userStore.roleCode"
+    :show-reset-tip="isMockMode && isCoreWorkflowMockMode"
+  />
 </template>
 
 <style scoped>

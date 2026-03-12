@@ -139,6 +139,15 @@ public class RiskDemoStore {
         riskDataRecords.remove(id);
     }
 
+    public synchronized void setRiskDataStatus(Long id, Integer dataStatus) {
+        RiskDataRecord current = riskDataRecords.get(id);
+        if (current == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险数据");
+        }
+        current.setDataStatus(dataStatus);
+        current.setUpdateTime(now());
+    }
+
     public synchronized List<RiskIndexRecord> listEnabledRiskIndexes() {
         return riskIndexes.values().stream()
                 .filter(item -> Objects.equals(item.getStatus(), 1))

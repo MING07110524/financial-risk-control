@@ -1,5 +1,10 @@
 import { fetchCurrentUserApi, loginApi, logoutApi } from "@/api/auth";
 import {
+  executeAssessmentApi,
+  getAssessmentDetailApi,
+  pageAssessmentsApi,
+} from "@/api/assessment";
+import {
   createRiskDataApi,
   deleteRiskDataApi,
   getRiskDataDetailApi,
@@ -8,6 +13,19 @@ import {
   pageRiskDataApi,
   updateRiskDataApi,
 } from "@/api/risk";
+import {
+  getDashboardStatisticsApi,
+  getHandleSummaryStatisticsApi,
+  getRiskLevelStatisticsApi,
+  getWarningTrendStatisticsApi,
+  listRecentWarningsApi,
+} from "@/api/statistics";
+import {
+  getWarningDetailApi,
+  handleWarningApi,
+  listWarningRecordsApi,
+  pageWarningsApi,
+} from "@/api/warning";
 import type { Result } from "@/types/common";
 import type { ServiceBundle } from "@/services/contracts";
 
@@ -27,8 +45,8 @@ export function createHttpServiceBundle(): ServiceBundle {
       getCurrentUser: fetchCurrentUserApi,
     },
     dashboardService: {
-      getDashboardStatistics: () => notImplemented(),
-      listRecentWarnings: () => notImplemented(),
+      getDashboardStatistics: getDashboardStatisticsApi,
+      listRecentWarnings: listRecentWarningsApi,
     },
     riskIndexService: {
       listRiskIndexes: listRiskIndexesApi,
@@ -42,20 +60,20 @@ export function createHttpServiceBundle(): ServiceBundle {
       deleteRiskData: deleteRiskDataApi,
     },
     assessmentService: {
-      pageAssessments: () => notImplemented(),
-      getAssessmentDetail: () => notImplemented(),
-      executeAssessment: () => notImplemented(),
+      pageAssessments: pageAssessmentsApi,
+      getAssessmentDetail: getAssessmentDetailApi,
+      executeAssessment: executeAssessmentApi,
     },
     warningService: {
-      pageWarnings: () => notImplemented(),
-      getWarningDetail: () => notImplemented(),
-      listWarningRecords: () => notImplemented(),
-      handleWarning: () => notImplemented(),
+      pageWarnings: pageWarningsApi,
+      getWarningDetail: getWarningDetailApi,
+      listWarningRecords: listWarningRecordsApi,
+      handleWarning: handleWarningApi,
     },
     statisticsService: {
-      getRiskLevelStatistics: () => notImplemented(),
-      getWarningTrendStatistics: () => notImplemented(),
-      getHandleSummaryStatistics: () => notImplemented(),
+      getRiskLevelStatistics: getRiskLevelStatisticsApi,
+      getWarningTrendStatistics: getWarningTrendStatisticsApi,
+      getHandleSummaryStatistics: getHandleSummaryStatisticsApi,
     },
     systemService: {
       resetDemoData: () => notImplemented("真实环境下不支持重置演示数据"),

@@ -2,6 +2,9 @@ package com.cmj.risk.service.impl;
 
 import com.cmj.risk.common.PageResult;
 import com.cmj.risk.component.RiskDemoStore;
+import com.cmj.risk.component.RiskWorkflowStore;
+import com.cmj.risk.common.ErrorCode;
+import com.cmj.risk.exception.BusinessException;
 import com.cmj.risk.dto.risk.RiskDataCreateDTO;
 import com.cmj.risk.dto.risk.RiskDataUpdateDTO;
 import com.cmj.risk.security.SecurityUser;
@@ -15,9 +18,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class RiskDataServiceImpl implements RiskDataService {
     private final RiskDemoStore riskDemoStore;
+    private final RiskWorkflowStore riskWorkflowStore;
 
-    public RiskDataServiceImpl(RiskDemoStore riskDemoStore) {
+    public RiskDataServiceImpl(RiskDemoStore riskDemoStore, RiskWorkflowStore riskWorkflowStore) {
         this.riskDemoStore = riskDemoStore;
+        this.riskWorkflowStore = riskWorkflowStore;
     }
 
     @Override
@@ -59,6 +64,9 @@ public class RiskDataServiceImpl implements RiskDataService {
 
     @Override
     public void deleteRiskData(Long id) {
+        if (riskWorkflowStore.hasRiskDataHistory(id)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "该业务数据已有评估或预警记录，当前阶段不允许删除");
+        }
         riskDemoStore.deleteRiskData(id);
     }
 

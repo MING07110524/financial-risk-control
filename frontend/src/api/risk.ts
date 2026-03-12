@@ -1,4 +1,5 @@
 import client from "@/api/client";
+import { compactParams } from "@/api/params";
 import type { PageResult, Result } from "@/types/common";
 import type {
   RiskDataCreateDTO,
@@ -12,7 +13,7 @@ import type {
 
 export async function pageRiskDataApi(query: RiskDataQuery): Promise<Result<PageResult<RiskDataVO>>> {
   const { data } = await client.get<Result<PageResult<RiskDataVO>>>("/risk-data", {
-    params: query,
+    params: compactParams(query),
   });
   return data;
 }
@@ -39,7 +40,7 @@ export async function deleteRiskDataApi(id: number): Promise<Result<void>> {
 
 export async function listRiskIndexesApi(query?: RiskIndexQuery): Promise<Result<RiskIndexVO[]>> {
   const { data } = await client.get<Result<RiskIndexVO[]>>("/risk-indexes", {
-    params: query,
+    params: query ? compactParams(query) : undefined,
   });
   return data;
 }
