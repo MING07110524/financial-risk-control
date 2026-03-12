@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: financial-risk-control-backend
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  health:
+    db:
+      enabled: false
+
+app:
+  security:
+    jwt:
+      issuer: financial-risk-control
+      expiration-minutes: 120
+      secret: change-me-before-enabling-real-authentication-please-use-a-long-secret-value
+    auth:
+      # B1 uses in-memory demo users so the real JWT flow can be tested
+      # immediately without blocking on database setup. / B1 先用内置 demo
+      # 用户打通真实 JWT 认证，避免这一轮先被数据库配置阻塞。
+      demo-users:
+        - user-id: 1
+          username: admin-demo
+          password: demo
+          real-name: 演示管理员
+          role-code: ADMIN
+          role-name: 系统管理员
+          enabled: true
+        - user-id: 2
+          username: risk-demo
+          password: demo
+          real-name: 演示风控员
+          role-code: RISK_USER
+          role-name: 风控人员
+          enabled: true
+        - user-id: 3
+          username: manager-demo
+          password: demo
+          real-name: 演示管理者
+          role-code: MANAGER
+          role-name: 管理人员
+          enabled: true
+
+# Phase 1 note:
+# DataSource and MyBatis auto configuration are intentionally disabled so the
+# scaffold can boot before the database layer is implemented in later phases.

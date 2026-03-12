@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DemoGuideDrawer from "@/components/DemoGuideDrawer.vue";
-import { isMockMode, systemService } from "@/services";
+import { isAuthMockMode, isMockMode, systemService } from "@/services";
 import { useUserStore } from "@/stores/user";
 import { getErrorMessage } from "@/utils/result";
 
@@ -96,7 +96,8 @@ async function handleResetDemoData() {
           <p class="layout-header__subtitle">{{ userStore.currentUser?.roleName ?? "未登录用户" }}</p>
         </div>
         <div class="layout-header__actions">
-          <el-tag v-if="isMockMode" type="warning" effect="dark">Mock 模式</el-tag>
+          <el-tag v-if="isMockMode && isAuthMockMode" type="warning" effect="dark">全 Mock 模式</el-tag>
+          <el-tag v-else-if="isMockMode" type="success" effect="dark">认证真实 / 业务 Mock</el-tag>
           <span class="layout-header__user">{{ userStore.currentUser?.realName ?? "未知用户" }}</span>
           <el-button plain :icon="QuestionFilled" @click="guideVisible = true">演示路径</el-button>
           <el-button v-if="isMockMode" plain :icon="RefreshRight" @click="handleResetDemoData">重置演示数据</el-button>
