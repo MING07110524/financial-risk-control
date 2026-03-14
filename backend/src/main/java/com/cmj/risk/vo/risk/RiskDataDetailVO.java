@@ -22,4 +22,5 @@ public class RiskDataDetailVO {
     private String createTime;
     private String updateTime;
     private List<RiskDataIndexValueVO> indexValues;
+    private List<String> missingEnabledIndexNames;
 }

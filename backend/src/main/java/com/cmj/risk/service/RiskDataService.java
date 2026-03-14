@@ -23,5 +23,5 @@ public interface RiskDataService {
 
     RiskDataDetailVO updateRiskData(Long id, RiskDataUpdateDTO dto, SecurityUser operator);
 
-    void deleteRiskData(Long id);
+    void deleteRiskData(Long id, SecurityUser operator);
 }

@@ -1,4 +1,5 @@
 import type { CurrentUser } from "@/types/auth";
+import type { LogVO } from "@/types/system";
 import type {
   AssessmentIndexResultVO,
   DashboardStatisticsVO,
@@ -397,6 +398,13 @@ export function createMockSeed(): MockDb {
     createWarning(2, assessments[2]!, "WARN-20260307-001", 2, "2026-03-07 16:31:00", handleRecords),
   ];
 
+  const logs: LogVO[] = [
+    { id: 1, moduleName: "系统", operationType: "登录", operationDesc: "用户 admin-demo 登录系统", operator: "admin-demo", operatorId: 1, operationTime: "2026-03-11 09:00:00" },
+    { id: 2, moduleName: "风险数据", operationType: "新增", operationDesc: "新增风险数据 FRC-202603-001", operator: "risk-demo", operatorId: 2, operationTime: "2026-03-10 09:10:00" },
+    { id: 3, moduleName: "风险评估", operationType: "执行", operationDesc: "执行风险评估 FRC-202603-003", operator: "risk-demo", operatorId: 2, operationTime: "2026-03-08 15:45:00" },
+    { id: 4, moduleName: "预警", operationType: "处理", operationDesc: "处理预警 WARN-20260307-001", operator: "risk-demo", operatorId: 2, operationTime: "2026-03-08 09:30:00" },
+  ];
+
   const pendingWarning = warnings[0];
   const handledWarning = warnings[1];
   const pendingAssessment = assessments[1];
@@ -429,6 +437,7 @@ export function createMockSeed(): MockDb {
     riskData: structuredClone(riskData),
     assessments: structuredClone(assessments),
     warnings: structuredClone(warnings),
+    logs: structuredClone(logs),
     nextIds: {
       riskData: 6,
       assessment: 5,

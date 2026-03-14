@@ -1,7 +1,8 @@
-### IntelliJ IDEA ###
+### IDE ###
+.idea/
+*.iml
+.vscode/
 out/
-!**/src/main/**/out/
-!**/src/test/**/out/
 .kotlin
 
 ### Eclipse ###
@@ -13,8 +14,6 @@ out/
 .springBeans
 .sts4-cache
 bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
 
 ### NetBeans ###
 /nbproject/private/
@@ -23,8 +22,17 @@ bin/
 /nbdist/
 /.nb-gradle/
 
-### VS Code ###
-.vscode/
-
 ### Mac OS ###
 .DS_Store
+
+### Full-stack Scaffold ###
+/backend/target/
+/backend/NUL
+/backend/spring-boot-run.out.log
+/backend/spring-boot-run.err.log
+/frontend/node_modules/
+/frontend/dist/
+/frontend/dist-mock/
+/frontend/.vite/
+/package-lock.json
+*.log

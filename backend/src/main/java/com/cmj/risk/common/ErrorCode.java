@@ -12,6 +12,9 @@ public enum ErrorCode {
     CONFLICT(40900, "Resource conflict"),
     INVALID_CREDENTIALS(41001, "Username or password is incorrect"),
     ACCOUNT_DISABLED(41002, "Account is disabled"),
+    DUPLICATE_INDEX_CODE(42002, "Risk index code already exists"),
+    RULE_RANGE_CONFLICT(42003, "Risk rule range conflict"),
+    INDEX_VALUE_INCOMPLETE(42004, "Risk data is missing enabled index values"),
     SYSTEM_ERROR(50000, "System error"),
     FEATURE_DISABLED(50100, "Feature is not enabled in this phase");
 

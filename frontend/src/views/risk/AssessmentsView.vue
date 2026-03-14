@@ -48,6 +48,10 @@ const routeContextText = computed(() => {
   if (!selectedRiskData.value) {
     return "";
   }
+  if (selectedRiskData.value.dataStatus === 3) {
+    const missingNames = selectedRiskData.value.missingEnabledIndexNames?.join("、") || "新启用指标";
+    return `这条业务当前缺少启用指标值：${missingNames}。请先回到风险数据页补录，之后才能继续评估。`;
+  }
   if (selectedRiskData.value.dataStatus === 1) {
     return "这条业务已有有效评估。再次执行评估会让旧的有效记录失效，并生成新的评估记录。";
   }
@@ -66,6 +70,10 @@ function assessmentStatusTagType(status: 0 | 1): "success" | "info" {
 }
 
 function buildExecuteConfirmMessage(riskData: RiskDataDetailVO): string {
+  if (riskData.dataStatus === 3) {
+    const missingNames = riskData.missingEnabledIndexNames?.join("、") || "新启用指标";
+    return `业务 ${riskData.businessNo} 当前缺少启用指标值：${missingNames}。请先回到风险数据页补录，再执行评估。`;
+  }
   if (riskData.dataStatus === 1) {
     return `业务 ${riskData.businessNo} 当前已有有效评估。继续后，旧的有效评估会失效，并生成新的评估结果。是否继续？`;
   }
@@ -143,6 +151,25 @@ async function executeAssessment(riskDataId: number) {
         ? selectedRiskData.value
         : ensureSuccess(await riskDataService.getRiskDataDetail(riskDataId));
 
+    if (riskData.dataStatus === 3) {
+      await ElMessageBox.confirm(
+        buildExecuteConfirmMessage(riskData),
+        "需要先补录指标值",
+        {
+          type: "warning",
+          confirmButtonText: "去补录",
+          cancelButtonText: "取消",
+        },
+      );
+      await router.push({
+        path: "/risk/data",
+        query: {
+          editId: `${riskData.id}`,
+        },
+      });
+      return;
+    }
+
     await ElMessageBox.confirm(
       buildExecuteConfirmMessage(riskData),
       "执行评估确认",
@@ -168,7 +195,7 @@ async function executeAssessment(riskDataId: number) {
     const result = ensureSuccess(await assessmentService.executeAssessment(riskDataId));
     detail.value = result;
     detailVisible.value = true;
-    ElMessage.success("评估已完成");
+    ElMessage.success("评估已完成，可继续查看详情或前往预警管理");
     await loadSelectedRiskData(routeRiskDataId.value ?? riskDataId);
     await loadAssessments();
   } catch (error) {
@@ -232,7 +259,9 @@ watch(
         :title="routeContextText"
       />
       <div class="context-actions">
-        <el-button type="primary" :loading="executing" @click="executeAssessment(selectedRiskData.id)">执行评估</el-button>
+        <el-button type="primary" :loading="executing" @click="executeAssessment(selectedRiskData.id)">
+          {{ selectedRiskData.dataStatus === 3 ? "去补录后再评估" : "执行评估" }}
+        </el-button>
         <el-button @click="router.push('/risk/data')">返回风险数据</el-button>
       </div>
     </el-card>

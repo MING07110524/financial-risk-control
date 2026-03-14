@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ArrowRightBold, DataAnalysis, Monitor, Notebook, PieChart, QuestionFilled, RefreshRight, UserFilled, Warning } from "@element-plus/icons-vue";
+import { ArrowRightBold, ChatDotRound, DataAnalysis, Monitor, Notebook, PieChart, QuestionFilled, RefreshRight, UserFilled, Warning } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import DemoGuideDrawer from "@/components/DemoGuideDrawer.vue";
-import { isAuthMockMode, isCoreWorkflowMockMode, isMockMode, systemService } from "@/services";
+import { isMockMode, systemService } from "@/services";
 import { useUserStore } from "@/stores/user";
 import { getErrorMessage } from "@/utils/result";
 
@@ -15,6 +15,7 @@ const guideVisible = ref(false);
 
 const iconMap = {
   dashboard: Monitor,
+  assistant: ChatDotRound,
   "system-users": UserFilled,
   "system-logs": Notebook,
   "risk-data": Notebook,
@@ -43,7 +44,7 @@ async function handleResetDemoData() {
   try {
     await ElMessageBox.confirm(
       "这会把前端本地演示数据恢复到初始状态，但会保留当前登录态。是否继续？",
-      "重置演示数据",
+      "重置本地 Mock 数据",
       {
         type: "warning",
         confirmButtonText: "确认重置",
@@ -52,7 +53,7 @@ async function handleResetDemoData() {
     );
 
     await systemService.resetDemoData();
-    ElMessage.success("演示数据已重置，正在刷新页面");
+    ElMessage.success("本地 Mock 数据已重置，正在刷新页面");
     window.location.reload();
   } catch (error) {
     if (error !== "cancel") {
@@ -68,7 +69,7 @@ async function handleResetDemoData() {
       <div class="brand-card">
         <p class="brand-card__eyebrow">financial-risk-control</p>
         <h1 class="brand-card__title">金融风控演示台</h1>
-        <p class="brand-card__caption">最小闭环前端原型 · Mock 业务流</p>
+        <p class="brand-card__caption">{{ isMockMode ? "Mock 演示环境" : "真实接口联调模式" }}</p>
       </div>
 
       <el-menu
@@ -96,25 +97,24 @@ async function handleResetDemoData() {
           <p class="layout-header__subtitle">{{ userStore.currentUser?.roleName ?? "未登录用户" }}</p>
         </div>
         <div class="layout-header__actions">
-          <el-tag v-if="isMockMode && isAuthMockMode" type="warning" effect="dark">全 Mock 模式</el-tag>
-          <el-tag v-else-if="isCoreWorkflowMockMode" type="success" effect="dark">认证真实 / 部分业务 Mock</el-tag>
-          <el-tag v-else type="success" effect="dark">核心链真实后端</el-tag>
+          <el-tag v-if="isMockMode" type="warning" effect="dark">Mock 演示环境</el-tag>
+          <el-tag v-else type="success" effect="dark">真实接口联调模式</el-tag>
           <span class="layout-header__user">{{ userStore.currentUser?.realName ?? "未知用户" }}</span>
           <el-button plain :icon="QuestionFilled" @click="guideVisible = true">演示路径</el-button>
-          <el-button v-if="isMockMode && isCoreWorkflowMockMode" plain :icon="RefreshRight" @click="handleResetDemoData">重置演示数据</el-button>
+          <el-button v-if="isMockMode" plain :icon="RefreshRight" @click="handleResetDemoData">重置本地 Mock 数据</el-button>
           <el-button type="primary" plain @click="handleLogout">退出登录</el-button>
         </div>
       </el-header>
 
       <el-main class="layout-main">
-        <RouterView />
+    <RouterView />
       </el-main>
     </el-container>
   </el-container>
   <DemoGuideDrawer
     v-model="guideVisible"
     :role-code="userStore.roleCode"
-    :show-reset-tip="isMockMode && isCoreWorkflowMockMode"
+    :show-reset-tip="isMockMode"
   />
 </template>
 

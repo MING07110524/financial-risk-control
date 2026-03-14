@@ -2,112 +2,183 @@ package com.cmj.risk.component;
 
 import com.cmj.risk.common.ErrorCode;
 import com.cmj.risk.exception.BusinessException;
-import jakarta.annotation.PostConstruct;
+import com.cmj.risk.mapper.risk.RiskDataIndexValueMapper;
+import com.cmj.risk.mapper.risk.RiskDataMapper;
+import com.cmj.risk.mapper.risk.RiskIndexMapper;
+import com.cmj.risk.mapper.risk.RiskRuleMapper;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class RiskDemoStore {
-    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private final RiskIndexMapper riskIndexMapper;
+    private final RiskRuleMapper riskRuleMapper;
+    private final RiskDataMapper riskDataMapper;
+    private final RiskDataIndexValueMapper riskDataIndexValueMapper;
 
-    private final AtomicLong riskDataIdGenerator = new AtomicLong(1);
-    private final Map<Long, RiskIndexRecord> riskIndexes = new LinkedHashMap<>();
-    private final Map<Long, List<RiskRuleRecord>> riskRulesByIndexId = new LinkedHashMap<>();
-    private final Map<Long, RiskDataRecord> riskDataRecords = new LinkedHashMap<>();
-
-    @PostConstruct
-    public void init() {
-        riskIndexes.clear();
-        riskRulesByIndexId.clear();
-        riskDataRecords.clear();
-        riskDataIdGenerator.set(1);
-
-        seedRiskIndexes();
-        seedRiskRules();
-        seedRiskData();
+    public RiskDemoStore(
+            RiskIndexMapper riskIndexMapper,
+            RiskRuleMapper riskRuleMapper,
+            RiskDataMapper riskDataMapper,
+            RiskDataIndexValueMapper riskDataIndexValueMapper
+    ) {
+        this.riskIndexMapper = riskIndexMapper;
+        this.riskRuleMapper = riskRuleMapper;
+        this.riskDataMapper = riskDataMapper;
+        this.riskDataIndexValueMapper = riskDataIndexValueMapper;
     }
 
-    public synchronized List<RiskIndexRecord> listRiskIndexes(String indexName, Integer status) {
-        String keyword = normalize(indexName);
-        return riskIndexes.values().stream()
-                .filter(item -> keyword.isBlank() || item.getIndexName().toLowerCase().contains(keyword))
-                .filter(item -> status == null || item.getStatus().equals(status))
-                .sorted(Comparator.comparing(RiskIndexRecord::getId))
+    public List<RiskIndexRecord> listRiskIndexes(String indexName, Integer status) {
+        return riskIndexMapper.listRiskIndexes(normalize(indexName), status).stream()
+                .map(this::copyRiskIndexRecord)
                 .toList();
     }
 
-    public synchronized RiskIndexRecord getRiskIndex(Long indexId) {
-        RiskIndexRecord riskIndexRecord = riskIndexes.get(indexId);
+    public RiskIndexRecord getRiskIndex(Long indexId) {
+        RiskIndexRecord riskIndexRecord = riskIndexMapper.findById(indexId);
         if (riskIndexRecord == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险指标");
         }
-        return riskIndexRecord;
+        return copyRiskIndexRecord(riskIndexRecord);
     }
 
-    public synchronized List<RiskRuleRecord> listRiskRules(Long indexId) {
-        return riskRulesByIndexId.getOrDefault(indexId, List.of()).stream()
-                .sorted(Comparator.comparing(RiskRuleRecord::getScoreMin))
+    @Transactional
+    public RiskIndexRecord createRiskIndex(RiskIndexRecord draftRecord) {
+        validateRiskIndexStatus(draftRecord.getStatus());
+        String normalizedCode = normalizeIndexCode(draftRecord.getIndexCode());
+        validateUniqueIndexCode(normalizedCode, null);
+        validateIndexHasRulesBeforeEnable(null, draftRecord.getStatus());
+        validateEnabledWeightLimit(null, draftRecord.getWeightValue(), draftRecord.getStatus());
+
+        RiskIndexRecord created = copyRiskIndexRecord(draftRecord);
+        created.setIndexCode(normalizedCode);
+        riskIndexMapper.insert(created);
+        return getRiskIndex(created.getId());
+    }
+
+    @Transactional
+    public RiskIndexRecord updateRiskIndex(Long id, RiskIndexRecord draftRecord) {
+        RiskIndexRecord current = riskIndexMapper.findById(id);
+        if (current == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险指标");
+        }
+
+        String normalizedCode = normalizeIndexCode(draftRecord.getIndexCode());
+        validateUniqueIndexCode(normalizedCode, id);
+        validateEnabledWeightLimit(id, draftRecord.getWeightValue(), current.getStatus());
+
+        current.setIndexName(draftRecord.getIndexName());
+        current.setIndexCode(normalizedCode);
+        current.setWeightValue(draftRecord.getWeightValue());
+        current.setIndexDesc(draftRecord.getIndexDesc());
+        riskIndexMapper.update(current);
+        return getRiskIndex(id);
+    }
+
+    @Transactional
+    public RiskIndexRecord updateRiskIndexStatus(Long id, Integer status) {
+        RiskIndexRecord current = riskIndexMapper.findById(id);
+        if (current == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险指标");
+        }
+
+        validateRiskIndexStatus(status);
+        validateIndexHasRulesBeforeEnable(id, status);
+        validateEnabledWeightLimit(id, current.getWeightValue(), status);
+        riskIndexMapper.updateStatus(id, status);
+        return getRiskIndex(id);
+    }
+
+    public List<RiskRuleRecord> listRiskRules(Long indexId) {
+        getRiskIndex(indexId);
+        return riskRuleMapper.listByIndexId(indexId).stream()
+                .sorted(Comparator.comparing(RiskRuleRecord::getScoreMin).thenComparing(RiskRuleRecord::getId))
+                .map(this::copyRiskRuleRecord)
                 .toList();
     }
 
-    public synchronized List<RiskDataRecord> listRiskData(
+    @Transactional
+    public RiskRuleRecord createRiskRule(RiskRuleRecord draftRecord) {
+        RiskIndexRecord riskIndexRecord = getRiskIndex(draftRecord.getIndexId());
+        validateRuleRange(draftRecord.getScoreMin(), draftRecord.getScoreMax());
+        validateRuleConflict(draftRecord.getIndexId(), null, draftRecord.getScoreMin(), draftRecord.getScoreMax());
+
+        RiskRuleRecord created = copyRiskRuleRecord(draftRecord);
+        created.setIndexName(riskIndexRecord.getIndexName());
+        riskRuleMapper.insert(created);
+        return getRiskRule(created.getId());
+    }
+
+    @Transactional
+    public RiskRuleRecord updateRiskRule(Long id, RiskRuleRecord draftRecord) {
+        RiskRuleRecord current = getRiskRule(id);
+        validateRuleRange(draftRecord.getScoreMin(), draftRecord.getScoreMax());
+        validateRuleConflict(current.getIndexId(), id, draftRecord.getScoreMin(), draftRecord.getScoreMax());
+
+        current.setScoreMin(draftRecord.getScoreMin());
+        current.setScoreMax(draftRecord.getScoreMax());
+        current.setScoreValue(draftRecord.getScoreValue());
+        current.setWarningLevel(draftRecord.getWarningLevel());
+        riskRuleMapper.update(current);
+        return getRiskRule(id);
+    }
+
+    @Transactional
+    public void deleteRiskRule(Long id) {
+        RiskRuleRecord current = getRiskRule(id);
+        if (Objects.equals(getRiskIndex(current.getIndexId()).getStatus(), 1)
+                && riskRuleMapper.countByIndexId(current.getIndexId()) == 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "启用中的指标必须至少保留一条评分规则");
+        }
+        riskRuleMapper.deleteById(id);
+    }
+
+    public List<RiskDataRecord> listRiskData(
             String businessNo,
             String customerName,
             String businessType,
             Integer dataStatus
     ) {
-        String businessKeyword = normalize(businessNo);
-        String customerKeyword = normalize(customerName);
-        String businessTypeKeyword = normalize(businessType);
-        return riskDataRecords.values().stream()
-                .filter(item -> businessKeyword.isBlank() || item.getBusinessNo().toLowerCase().contains(businessKeyword))
-                .filter(item -> customerKeyword.isBlank() || item.getCustomerName().toLowerCase().contains(customerKeyword))
-                .filter(item -> businessTypeKeyword.isBlank() || item.getBusinessType().toLowerCase().contains(businessTypeKeyword))
-                .filter(item -> dataStatus == null || item.getDataStatus().equals(dataStatus))
-                .sorted(Comparator.comparing(RiskDataRecord::getCreateTime).reversed())
-                .map(this::copyRiskDataRecord)
+        return riskDataMapper.listRiskData(normalize(businessNo), normalize(customerName), normalize(businessType), dataStatus)
+                .stream()
+                .map(this::attachIndexValues)
+                .sorted(Comparator.comparing(RiskDataRecord::getCreateTime).reversed().thenComparing(RiskDataRecord::getId).reversed())
                 .toList();
     }
 
-    public synchronized RiskDataRecord getRiskData(Long id) {
-        RiskDataRecord record = riskDataRecords.get(id);
+    public RiskDataRecord getRiskData(Long id) {
+        RiskDataRecord record = riskDataMapper.findById(id);
         if (record == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险数据");
         }
-        return copyRiskDataRecord(record);
+        return attachIndexValues(record);
     }
 
-    public synchronized RiskDataRecord createRiskData(RiskDataRecord draftRecord) {
+    @Transactional
+    public RiskDataRecord createRiskData(RiskDataRecord draftRecord) {
         validateUniqueBusinessNo(draftRecord.getBusinessNo(), null);
         validateIndexValues(draftRecord.getIndexValues());
 
-        Long id = riskDataIdGenerator.getAndIncrement();
-        String now = now();
-        draftRecord.setId(id);
-        draftRecord.setCreateTime(now);
-        draftRecord.setUpdateTime(now);
-        draftRecord.setDataStatus(0);
-        riskDataRecords.put(id, copyRiskDataRecord(draftRecord));
-        return getRiskData(id);
+        RiskDataRecord created = copyRiskDataRecord(draftRecord);
+        created.setDataStatus(0);
+        riskDataMapper.insert(created);
+        replaceRiskDataIndexValues(created.getId(), draftRecord.getIndexValues());
+        return getRiskData(created.getId());
     }
 
-    public synchronized RiskDataRecord updateRiskData(Long id, RiskDataRecord draftRecord) {
-        RiskDataRecord current = riskDataRecords.get(id);
+    @Transactional
+    public RiskDataRecord updateRiskData(Long id, RiskDataRecord draftRecord) {
+        RiskDataRecord current = riskDataMapper.findById(id);
         if (current == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险数据");
         }
@@ -117,52 +188,143 @@ public class RiskDemoStore {
         current.setCustomerName(draftRecord.getCustomerName());
         current.setBusinessType(draftRecord.getBusinessType());
         current.setRiskDesc(draftRecord.getRiskDesc());
-        current.setIndexValues(copyIndexValueRecords(draftRecord.getIndexValues()));
-        current.setUpdateTime(now());
         if (Objects.equals(current.getDataStatus(), 1)) {
-            // Keep the same user-facing meaning as the documentation: once an
-            // already-assessed record changes, it should become "待重评".
-            // / 保持和文档一致：已经评估过的业务一旦被修改，就要进入“待重评”状态。
             current.setDataStatus(2);
         }
-        return copyRiskDataRecord(current);
+        riskDataMapper.update(current);
+        replaceRiskDataIndexValues(id, draftRecord.getIndexValues());
+        return getRiskData(id);
     }
 
-    public synchronized void deleteRiskData(Long id) {
-        RiskDataRecord current = riskDataRecords.get(id);
+    @Transactional
+    public void deleteRiskData(Long id) {
+        RiskDataRecord current = riskDataMapper.findById(id);
         if (current == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险数据");
         }
         if (!Objects.equals(current.getDataStatus(), 0)) {
             throw new BusinessException(ErrorCode.CONFLICT, "该业务数据已有评估历史或预警关联，当前阶段不允许删除");
         }
-        riskDataRecords.remove(id);
+        riskDataIndexValueMapper.deleteByRiskDataId(id);
+        riskDataMapper.deleteById(id);
     }
 
-    public synchronized void setRiskDataStatus(Long id, Integer dataStatus) {
-        RiskDataRecord current = riskDataRecords.get(id);
+    @Transactional
+    public void setRiskDataStatus(Long id, Integer dataStatus) {
+        RiskDataRecord current = riskDataMapper.findById(id);
         if (current == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的风险数据");
         }
-        current.setDataStatus(dataStatus);
-        current.setUpdateTime(now());
+        riskDataMapper.updateStatus(id, dataStatus);
     }
 
-    public synchronized List<RiskIndexRecord> listEnabledRiskIndexes() {
-        return riskIndexes.values().stream()
-                .filter(item -> Objects.equals(item.getStatus(), 1))
-                .sorted(Comparator.comparing(RiskIndexRecord::getId))
+    public List<Long> listRiskDataIdsMissingEnabledIndex(Long indexId) {
+        return listRiskData("", "", "", null).stream()
+                .filter(item -> item.getIndexValues().stream().noneMatch(value -> value.getIndexId().equals(indexId)))
+                .map(RiskDataRecord::getId)
                 .toList();
     }
 
+    public boolean hasAllEnabledIndexValues(Long riskDataId) {
+        RiskDataRecord current = getRiskData(riskDataId);
+        List<Long> enabledIndexIds = listEnabledRiskIndexes().stream()
+                .map(RiskIndexRecord::getId)
+                .sorted()
+                .toList();
+        List<Long> existingIndexIds = current.getIndexValues().stream()
+                .map(RiskDataIndexValueRecord::getIndexId)
+                .sorted()
+                .toList();
+        return enabledIndexIds.equals(existingIndexIds);
+    }
+
+    public List<String> listMissingEnabledIndexNames(Long riskDataId) {
+        RiskDataRecord current = getRiskData(riskDataId);
+        return listEnabledRiskIndexes().stream()
+                .filter(index -> current.getIndexValues().stream().noneMatch(value -> value.getIndexId().equals(index.getId())))
+                .map(RiskIndexRecord::getIndexName)
+                .toList();
+    }
+
+    public List<RiskIndexRecord> listEnabledRiskIndexes() {
+        return riskIndexMapper.listRiskIndexes(null, 1).stream()
+                .map(this::copyRiskIndexRecord)
+                .toList();
+    }
+
+    public Long findRuleIndexId(Long ruleId) {
+        return getRiskRule(ruleId).getIndexId();
+    }
+
+    private RiskRuleRecord getRiskRule(Long id) {
+        RiskRuleRecord riskRuleRecord = riskRuleMapper.findById(id);
+        if (riskRuleRecord == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的评分规则");
+        }
+        return copyRiskRuleRecord(riskRuleRecord);
+    }
+
+    private void replaceRiskDataIndexValues(Long riskDataId, List<RiskDataIndexValueRecord> indexValues) {
+        riskDataIndexValueMapper.deleteByRiskDataId(riskDataId);
+        if (!indexValues.isEmpty()) {
+            riskDataIndexValueMapper.insertBatch(riskDataId, copyIndexValueRecords(indexValues));
+        }
+    }
+
+    private RiskDataRecord attachIndexValues(RiskDataRecord source) {
+        RiskDataRecord copied = copyRiskDataRecord(source);
+        copied.setIndexValues(copyIndexValueRecords(riskDataIndexValueMapper.listByRiskDataId(source.getId())));
+        return copied;
+    }
+
     private void validateUniqueBusinessNo(String businessNo, Long currentId) {
-        boolean duplicated = riskDataRecords.values().stream()
-                .anyMatch(item ->
-                        item.getBusinessNo().equalsIgnoreCase(businessNo)
-                                && (currentId == null || !item.getId().equals(currentId))
-                );
-        if (duplicated) {
+        if (riskDataMapper.countByBusinessNo(businessNo, currentId) > 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "业务编号已存在，请更换后重试");
+        }
+    }
+
+    private void validateUniqueIndexCode(String indexCode, Long currentId) {
+        RiskIndexRecord duplicated = riskIndexMapper.findByCode(indexCode);
+        if (duplicated != null && (currentId == null || !duplicated.getId().equals(currentId))) {
+            throw new BusinessException(ErrorCode.DUPLICATE_INDEX_CODE, "指标编码已存在，请更换后重试");
+        }
+    }
+
+    private void validateEnabledWeightLimit(Long currentId, BigDecimal candidateWeight, Integer candidateStatus) {
+        if (!Objects.equals(candidateStatus, 1)) {
+            return;
+        }
+
+        BigDecimal enabledWeightTotal = riskIndexMapper.sumEnabledWeights(currentId).add(candidateWeight);
+        if (enabledWeightTotal.compareTo(new BigDecimal("100.00")) > 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "启用指标总权重不能超过 100，请先调整后重试");
+        }
+    }
+
+    private void validateRiskIndexStatus(Integer status) {
+        if (!Objects.equals(status, 0) && !Objects.equals(status, 1)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "指标状态只允许为 0 或 1");
+        }
+    }
+
+    private void validateIndexHasRulesBeforeEnable(Long indexId, Integer status) {
+        if (!Objects.equals(status, 1)) {
+            return;
+        }
+        if (indexId == null || riskRuleMapper.countByIndexId(indexId) == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该指标尚未配置评分规则，无法启用");
+        }
+    }
+
+    private void validateRuleRange(BigDecimal scoreMin, BigDecimal scoreMax) {
+        if (scoreMin.compareTo(scoreMax) > 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "评分规则最小值不能大于最大值");
+        }
+    }
+
+    private void validateRuleConflict(Long indexId, Long currentRuleId, BigDecimal scoreMin, BigDecimal scoreMax) {
+        if (riskRuleMapper.countConflictingRules(indexId, currentRuleId, scoreMin, scoreMax) > 0) {
+            throw new BusinessException(ErrorCode.RULE_RANGE_CONFLICT, "同一指标下评分规则区间不能重叠");
         }
     }
 
@@ -175,100 +337,22 @@ public class RiskDemoStore {
                 .map(RiskDataIndexValueRecord::getIndexId)
                 .sorted()
                 .toList();
-
-        // Require the payload to cover all enabled indexes exactly once so the
-        // next phase can run the assessment without补数. / 强制请求一次性覆盖全部启用
-        // 指标，避免后续评估阶段还要回头补录数据。
         if (enabledIndexIds.size() != providedIndexIds.size() || !enabledIndexIds.equals(providedIndexIds)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "所有启用指标都必须填写且只能填写一次");
+            throw new BusinessException(ErrorCode.INDEX_VALUE_INCOMPLETE, "所有启用指标都必须填写且只能填写一次");
         }
 
         boolean hasNullValue = indexValues.stream().anyMatch(item -> item.getIndexValue() == null);
         if (hasNullValue) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "所有启用指标都必须填写且值不能为空");
+            throw new BusinessException(ErrorCode.INDEX_VALUE_INCOMPLETE, "所有启用指标都必须填写且值不能为空");
         }
     }
 
-    private void seedRiskIndexes() {
-        riskIndexes.put(1L, RiskIndexRecord.builder().id(1L).indexName("负债率").indexCode("DEBT_RATIO").weightValue(new BigDecimal("30.00")).indexDesc("衡量企业负债压力，越高风险越大。").status(1).build());
-        riskIndexes.put(2L, RiskIndexRecord.builder().id(2L).indexName("现金流覆盖率").indexCode("CASH_FLOW_COVERAGE").weightValue(new BigDecimal("25.00")).indexDesc("衡量经营现金流覆盖债务能力，越高越稳健。").status(1).build());
-        riskIndexes.put(3L, RiskIndexRecord.builder().id(3L).indexName("逾期次数").indexCode("OVERDUE_COUNT").weightValue(new BigDecimal("25.00")).indexDesc("衡量历史逾期表现，次数越多风险越高。").status(1).build());
-        riskIndexes.put(4L, RiskIndexRecord.builder().id(4L).indexName("抵押覆盖率").indexCode("COLLATERAL_COVERAGE").weightValue(new BigDecimal("20.00")).indexDesc("衡量抵押物覆盖程度，越高越安全。").status(1).build());
-    }
-
-    private void seedRiskRules() {
-        riskRulesByIndexId.put(1L, List.of(
-                rule(1L, 1L, "负债率", "0", "40", "20", "LOW"),
-                rule(2L, 1L, "负债率", "40.01", "70", "60", "MEDIUM"),
-                rule(3L, 1L, "负债率", "70.01", "999", "90", "HIGH")
-        ));
-        riskRulesByIndexId.put(2L, List.of(
-                rule(4L, 2L, "现金流覆盖率", "0", "0.99", "90", "HIGH"),
-                rule(5L, 2L, "现金流覆盖率", "1", "1.59", "60", "MEDIUM"),
-                rule(6L, 2L, "现金流覆盖率", "1.6", "999", "20", "LOW")
-        ));
-        riskRulesByIndexId.put(3L, List.of(
-                rule(7L, 3L, "逾期次数", "0", "0", "20", "LOW"),
-                rule(8L, 3L, "逾期次数", "1", "2", "60", "MEDIUM"),
-                rule(9L, 3L, "逾期次数", "3", "999", "90", "HIGH")
-        ));
-        riskRulesByIndexId.put(4L, List.of(
-                rule(10L, 4L, "抵押覆盖率", "0", "99.99", "90", "HIGH"),
-                rule(11L, 4L, "抵押覆盖率", "100", "149.99", "60", "MEDIUM"),
-                rule(12L, 4L, "抵押覆盖率", "150", "999", "20", "LOW")
-        ));
-    }
-
-    private void seedRiskData() {
-        createSeedRiskData("FRC-202603-001", "星河贸易有限公司", "企业贷款", "新客户首次授信，待完成人工评估。", 0, "2026-03-10 09:10:00", "2026-03-10 09:10:00", List.of(indexValue(1L, "68"), indexValue(2L, "1.25"), indexValue(3L, "1"), indexValue(4L, "130")));
-        createSeedRiskData("FRC-202603-002", "晨光制造股份有限公司", "流动资金贷款", "经营稳定，已有一次低风险评估记录。", 1, "2026-03-09 11:20:00", "2026-03-09 11:20:00", List.of(indexValue(1L, "35"), indexValue(2L, "1.8"), indexValue(3L, "0"), indexValue(4L, "170")));
-        createSeedRiskData("FRC-202603-003", "远航物流集团", "供应链融资", "业务规模较大，当前存在中风险预警待处理。", 1, "2026-03-08 15:30:00", "2026-03-08 15:30:00", List.of(indexValue(1L, "65"), indexValue(2L, "1.2"), indexValue(3L, "2"), indexValue(4L, "120")));
-        createSeedRiskData("FRC-202603-004", "宏达置业有限公司", "项目融资", "历史上出现过高风险预警，已完成处理。", 1, "2026-03-07 16:15:00", "2026-03-07 16:15:00", List.of(indexValue(1L, "85"), indexValue(2L, "0.7"), indexValue(3L, "4"), indexValue(4L, "80")));
-        createSeedRiskData("FRC-202603-005", "云峰科技有限公司", "保函业务", "业务数据已更新，等待重新评估。", 2, "2026-03-06 10:05:00", "2026-03-11 14:40:00", List.of(indexValue(1L, "75"), indexValue(2L, "0.9"), indexValue(3L, "3"), indexValue(4L, "95")));
-    }
-
-    private void createSeedRiskData(String businessNo, String customerName, String businessType, String riskDesc, Integer dataStatus, String createTime, String updateTime, List<RiskDataIndexValueRecord> indexValues) {
-        Long id = riskDataIdGenerator.getAndIncrement();
-        riskDataRecords.put(id, RiskDataRecord.builder()
-                .id(id)
-                .businessNo(businessNo)
-                .customerName(customerName)
-                .businessType(businessType)
-                .riskDesc(riskDesc)
-                .dataStatus(dataStatus)
-                .createBy(2L)
-                .createByName("演示风控员")
-                .createTime(createTime)
-                .updateTime(updateTime)
-                .indexValues(copyIndexValueRecords(indexValues))
-                .build());
-    }
-
-    private RiskRuleRecord rule(Long id, Long indexId, String indexName, String scoreMin, String scoreMax, String scoreValue, String warningLevel) {
-        return RiskRuleRecord.builder()
-                .id(id)
-                .indexId(indexId)
-                .indexName(indexName)
-                .scoreMin(new BigDecimal(scoreMin))
-                .scoreMax(new BigDecimal(scoreMax))
-                .scoreValue(new BigDecimal(scoreValue))
-                .warningLevel(warningLevel)
-                .build();
-    }
-
-    private RiskDataIndexValueRecord indexValue(Long indexId, String value) {
-        return RiskDataIndexValueRecord.builder()
-                .indexId(indexId)
-                .indexValue(new BigDecimal(value))
-                .build();
-    }
-
-    private String now() {
-        return LocalDateTime.now().format(DATE_TIME_FORMATTER);
-    }
-
     private String normalize(String value) {
-        return value == null ? "" : value.trim().toLowerCase();
+        return value == null ? "" : value.trim();
+    }
+
+    private String normalizeIndexCode(String value) {
+        return value == null ? "" : value.trim().toUpperCase();
     }
 
     private RiskDataRecord copyRiskDataRecord(RiskDataRecord source) {
@@ -283,14 +367,40 @@ public class RiskDemoStore {
                 .createByName(source.getCreateByName())
                 .createTime(source.getCreateTime())
                 .updateTime(source.getUpdateTime())
-                .indexValues(copyIndexValueRecords(source.getIndexValues()))
+                .indexValues(source.getIndexValues() == null ? new ArrayList<>() : copyIndexValueRecords(source.getIndexValues()))
+                .build();
+    }
+
+    private RiskIndexRecord copyRiskIndexRecord(RiskIndexRecord source) {
+        return RiskIndexRecord.builder()
+                .id(source.getId())
+                .indexName(source.getIndexName())
+                .indexCode(source.getIndexCode())
+                .weightValue(source.getWeightValue())
+                .indexDesc(source.getIndexDesc())
+                .status(source.getStatus())
+                .build();
+    }
+
+    private RiskRuleRecord copyRiskRuleRecord(RiskRuleRecord source) {
+        return RiskRuleRecord.builder()
+                .id(source.getId())
+                .indexId(source.getIndexId())
+                .indexName(source.getIndexName())
+                .scoreMin(source.getScoreMin())
+                .scoreMax(source.getScoreMax())
+                .scoreValue(source.getScoreValue())
+                .warningLevel(source.getWarningLevel())
                 .build();
     }
 
     private List<RiskDataIndexValueRecord> copyIndexValueRecords(List<RiskDataIndexValueRecord> source) {
         return source.stream()
-                .map(item -> RiskDataIndexValueRecord.builder().indexId(item.getIndexId()).indexValue(item.getIndexValue()).build())
-                .collect(Collectors.toCollection(ArrayList::new));
+                .map(item -> RiskDataIndexValueRecord.builder()
+                        .indexId(item.getIndexId())
+                        .indexValue(item.getIndexValue())
+                        .build())
+                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
     }
 
     @Getter

@@ -3,6 +3,7 @@ package com.cmj.risk.service.impl;
 import com.cmj.risk.common.PageResult;
 import com.cmj.risk.component.RiskWorkflowStore;
 import com.cmj.risk.security.SecurityUser;
+import com.cmj.risk.service.LogService;
 import com.cmj.risk.service.WarningService;
 import com.cmj.risk.vo.warning.WarningDetailVO;
 import com.cmj.risk.vo.warning.WarningHandleRecordVO;
@@ -13,9 +14,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class WarningServiceImpl implements WarningService {
     private final RiskWorkflowStore riskWorkflowStore;
+    private final LogService logService;
 
-    public WarningServiceImpl(RiskWorkflowStore riskWorkflowStore) {
+    public WarningServiceImpl(RiskWorkflowStore riskWorkflowStore, LogService logService) {
         this.riskWorkflowStore = riskWorkflowStore;
+        this.logService = logService;
     }
 
     @Override
@@ -77,7 +80,10 @@ public class WarningServiceImpl implements WarningService {
 
     @Override
     public void handleWarning(Long warningId, String handleOpinion, String handleResult, Integer nextStatus, SecurityUser operator) {
+        RiskWorkflowStore.WarningRecord warning = riskWorkflowStore.getWarning(warningId);
+        String warningCode = warning.getWarningCode();
         riskWorkflowStore.handleWarning(warningId, handleOpinion, handleResult, nextStatus, operator);
+        logService.createLog("预警", "处理", "处理预警 " + warningCode + "，处理意见：" + handleOpinion, operator.getUsername(), operator.getUserId());
     }
 
     @Override

@@ -8,7 +8,7 @@ import com.cmj.risk.vo.auth.LoginUserVO;
 public interface AuthService {
     LoginUserVO login(LoginRequestDTO loginRequestDTO);
 
-    void logout(Long userId);
+    void logout(SecurityUser securityUser);
 
     CurrentUserVO getCurrentUser(SecurityUser securityUser);
 }

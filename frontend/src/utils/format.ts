@@ -60,14 +60,16 @@ export function dataStatusLabel(status: RiskDataStatus): string {
     0: "待评估",
     1: "已评估",
     2: "待重评",
+    3: "待补录",
   }[status];
 }
 
-export function dataStatusTagType(status: RiskDataStatus): "info" | "success" | "warning" {
+export function dataStatusTagType(status: RiskDataStatus): "info" | "success" | "warning" | "danger" {
   return ({
     0: "info",
     1: "success",
     2: "warning",
+    3: "danger",
   } as const)[status];
 }
 

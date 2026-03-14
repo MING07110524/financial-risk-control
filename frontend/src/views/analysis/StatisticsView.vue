@@ -279,19 +279,22 @@ onMounted(() => {
       <el-col :xs="24" :xl="8">
         <el-card class="section-card" shadow="never">
           <template #header>风险等级分布</template>
-          <AppChart :option="riskLevelChartOption" height="300px" />
+          <el-empty v-if="totalRiskCount === 0" description="当前筛选条件下暂无风险等级分布" />
+          <AppChart v-else :option="riskLevelChartOption" height="300px" />
         </el-card>
       </el-col>
       <el-col :xs="24" :xl="8">
         <el-card class="section-card" shadow="never">
           <template #header>预警趋势</template>
-          <AppChart :option="warningTrendChartOption" height="300px" />
+          <el-empty v-if="totalWarningCount === 0" description="当前筛选条件下暂无预警趋势数据" />
+          <AppChart v-else :option="warningTrendChartOption" height="300px" />
         </el-card>
       </el-col>
       <el-col :xs="24" :xl="8">
         <el-card class="section-card" shadow="never">
           <template #header>处置汇总</template>
-          <AppChart :option="handleSummaryChartOption" height="300px" />
+          <el-empty v-if="handleSummary.length === 0" description="当前筛选条件下暂无处置汇总数据" />
+          <AppChart v-else :option="handleSummaryChartOption" height="300px" />
         </el-card>
       </el-col>
     </el-row>
@@ -300,7 +303,8 @@ onMounted(() => {
       <el-col :xs="24" :xl="12">
         <el-card class="section-card" shadow="never">
           <template #header>风险等级占比说明</template>
-          <div class="summary-list">
+          <el-empty v-if="riskLevelStats.length === 0" description="当前筛选条件下暂无风险等级占比说明" />
+          <div v-else class="summary-list">
             <div v-for="item in riskLevelStats" :key="item.riskLevel" class="summary-item">
               <div class="summary-item__row">
                 <strong>{{ riskLevelLabel(item.riskLevel) }}</strong>
@@ -314,7 +318,8 @@ onMounted(() => {
       <el-col :xs="24" :xl="12">
         <el-card class="section-card" shadow="never">
           <template #header>预警处置明细</template>
-          <div class="summary-list">
+          <el-empty v-if="handleSummary.length === 0" description="当前筛选条件下暂无预警处置明细" />
+          <div v-else class="summary-list">
             <div v-for="item in handleSummary" :key="item.warningStatus" class="summary-item summary-item--plain">
               <div class="summary-item__row">
                 <el-tag :type="statusTagType(item.warningStatus)">{{ warningStatusLabel(item.warningStatus) }}</el-tag>

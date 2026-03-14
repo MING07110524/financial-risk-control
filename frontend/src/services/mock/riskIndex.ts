@@ -16,6 +16,15 @@ export const mockRiskIndexService: RiskIndexService = {
 
     return withDelay(success(records));
   },
+  async createRiskIndex() {
+    return withDelay({ code: 50100, message: "Mock 模式暂未支持指标写操作", data: undefined as never });
+  },
+  async updateRiskIndex() {
+    return withDelay({ code: 50100, message: "Mock 模式暂未支持指标写操作", data: undefined as never });
+  },
+  async updateRiskIndexStatus() {
+    return withDelay({ code: 50100, message: "Mock 模式暂未支持指标写操作", data: undefined as never });
+  },
   async listRiskRules(indexId) {
     const currentUser = ensureRole(["ADMIN"]);
     if ("code" in currentUser) {
@@ -27,5 +36,14 @@ export const mockRiskIndexService: RiskIndexService = {
       .sort((left, right) => left.scoreMin - right.scoreMin);
 
     return withDelay(success(records));
+  },
+  async createRiskRule() {
+    return withDelay({ code: 50100, message: "Mock 模式暂未支持规则写操作", data: undefined as never });
+  },
+  async updateRiskRule() {
+    return withDelay({ code: 50100, message: "Mock 模式暂未支持规则写操作", data: undefined as never });
+  },
+  async deleteRiskRule() {
+    return withDelay({ code: 50100, message: "Mock 模式暂未支持规则写操作", data: undefined as never });
   },
 };

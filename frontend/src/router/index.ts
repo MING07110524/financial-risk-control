@@ -28,6 +28,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: "assistant",
+        name: "assistant",
+        component: () => import("@/views/AssistantView.vue"),
+        meta: {
+          title: "AI 助手",
+          roles: ["ADMIN", "RISK_USER", "MANAGER"],
+          showInMenu: true,
+        },
+      },
+      {
         path: "system/users",
         name: "system-users",
         component: () => import("@/views/system/UsersView.vue"),

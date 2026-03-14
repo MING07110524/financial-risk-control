@@ -1,9 +1,3 @@
-CREATE DATABASE IF NOT EXISTS financial_risk_control
-DEFAULT CHARACTER SET utf8mb4
-COLLATE utf8mb4_general_ci;
-
-USE financial_risk_control;
-
 CREATE TABLE IF NOT EXISTS sys_user (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'User primary key',
     username VARCHAR(50) NOT NULL COMMENT 'Login username',
@@ -105,6 +99,24 @@ CREATE TABLE IF NOT EXISTS risk_assessment (
     CONSTRAINT fk_risk_assessment_assessment_by FOREIGN KEY (assessment_by) REFERENCES sys_user (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Risk assessment';
 
+CREATE TABLE IF NOT EXISTS risk_assessment_index_result (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
+    assessment_id BIGINT NOT NULL COMMENT 'Assessment ID',
+    index_id BIGINT NOT NULL COMMENT 'Index ID',
+    index_code VARCHAR(50) NOT NULL COMMENT 'Index code snapshot',
+    index_name VARCHAR(100) NOT NULL COMMENT 'Index name snapshot',
+    index_value DECIMAL(10,2) NOT NULL COMMENT 'Index value snapshot',
+    weight_value DECIMAL(5,2) NOT NULL COMMENT 'Weight snapshot',
+    score_value DECIMAL(10,2) NOT NULL COMMENT 'Score snapshot',
+    weighted_score DECIMAL(10,2) NOT NULL COMMENT 'Weighted score snapshot',
+    warning_level VARCHAR(20) DEFAULT NULL COMMENT 'Warning level snapshot',
+    PRIMARY KEY (id),
+    KEY idx_risk_assessment_index_result_assessment_id (assessment_id),
+    KEY idx_risk_assessment_index_result_index_id (index_id),
+    CONSTRAINT fk_risk_assessment_index_result_assessment_id FOREIGN KEY (assessment_id) REFERENCES risk_assessment (id),
+    CONSTRAINT fk_risk_assessment_index_result_index_id FOREIGN KEY (index_id) REFERENCES risk_index (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Risk assessment index result';
+
 CREATE TABLE IF NOT EXISTS risk_warning (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
     assessment_id BIGINT NOT NULL COMMENT 'Assessment ID',
@@ -125,6 +137,7 @@ CREATE TABLE IF NOT EXISTS warning_handle_record (
     handle_user_id BIGINT NOT NULL COMMENT 'Handled by user ID',
     handle_opinion VARCHAR(500) NOT NULL COMMENT 'Handle opinion',
     handle_result VARCHAR(255) NOT NULL COMMENT 'Handle result',
+    next_status TINYINT NOT NULL COMMENT 'Next status after handling',
     handle_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Handle time',
     PRIMARY KEY (id),
     KEY idx_warning_handle_record_warning_id (warning_id),
@@ -133,9 +146,28 @@ CREATE TABLE IF NOT EXISTS warning_handle_record (
     CONSTRAINT fk_warning_handle_record_handle_user_id FOREIGN KEY (handle_user_id) REFERENCES sys_user (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Warning handle record';
 
+SET @warning_handle_record_has_next_status := (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'warning_handle_record'
+      AND COLUMN_NAME = 'next_status'
+);
+
+SET @warning_handle_record_next_status_ddl := IF(
+    @warning_handle_record_has_next_status = 0,
+    'ALTER TABLE warning_handle_record ADD COLUMN next_status TINYINT NOT NULL DEFAULT 2 COMMENT ''Next status after handling'' AFTER handle_result',
+    'SELECT 1'
+);
+
+PREPARE warning_handle_record_next_status_stmt FROM @warning_handle_record_next_status_ddl;
+EXECUTE warning_handle_record_next_status_stmt;
+DEALLOCATE PREPARE warning_handle_record_next_status_stmt;
+
 CREATE TABLE IF NOT EXISTS sys_log (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
-    user_id BIGINT NOT NULL COMMENT 'Operator user ID',
+    user_id BIGINT DEFAULT NULL COMMENT 'Operator user ID',
+    operator VARCHAR(50) DEFAULT NULL COMMENT 'Operator username',
     module_name VARCHAR(50) NOT NULL COMMENT 'Module name',
     operation_type VARCHAR(50) NOT NULL COMMENT 'Operation type',
     operation_desc VARCHAR(255) DEFAULT NULL COMMENT 'Operation description',
@@ -143,5 +175,7 @@ CREATE TABLE IF NOT EXISTS sys_log (
     PRIMARY KEY (id),
     KEY idx_sys_log_user_id (user_id),
     KEY idx_sys_log_module_name (module_name),
+    KEY idx_sys_log_operator (operator),
+    KEY idx_sys_log_operation_time (operation_time),
     CONSTRAINT fk_sys_log_user_id FOREIGN KEY (user_id) REFERENCES sys_user (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='System log';

@@ -76,7 +76,8 @@ const quickActions = computed(() => {
   if (userStore.roleCode === "ADMIN") {
     return [
       { label: "查看指标规则", route: "/risk/indexes", description: "确认当前评估闭环依赖的指标、权重和评分规则。" },
-      { label: "查看用户管理入口", route: "/system/users", description: "该页目前仍是占位，用于说明后续后台能力会放在这里。" },
+      { label: "进入用户管理", route: "/system/users", description: "维护账号状态、角色分配，并验证当前登录用户保护。" },
+      { label: "查看操作日志", route: "/system/logs", description: "回看指标规则、用户管理等后台写操作的审计记录。" },
     ];
   }
 
@@ -106,7 +107,7 @@ const roleFocusTitle = computed(() => {
 
 const roleFocusText = computed(() => {
   if (userStore.roleCode === "ADMIN") {
-    return "管理员当前主要负责确认指标和规则口径是否可支撑整条风控闭环，而不是直接参与业务处理。";
+    return "管理员当前主要负责维护指标规则、用户账号和操作日志审计，确保整条风控闭环可配置、可追溯。";
   }
   if (userStore.roleCode === "MANAGER") {
     return "管理人员当前重点关注预警数量、高风险占比和处置完成度，用于快速判断系统运行状态。";
@@ -122,7 +123,7 @@ const dashboardInsight = computed(() => {
   const handledCount = handleSummary.value.find((item) => item.warningStatus === 2)?.count ?? 0;
 
   if (userStore.roleCode === "ADMIN") {
-    return `当前演示数据中共有 ${statistics.value.warningCount} 条预警，说明指标规则已经足以驱动后续业务链。`;
+    return `当前演示环境共有 ${statistics.value.warningCount} 条预警，可结合指标规则、用户管理与操作日志一起核对后台治理闭环。`;
   }
   if (pendingCount > 0) {
     return `当前仍有 ${pendingCount} 条预警待处理，优先进入预警管理页查看处置进展。`;
@@ -262,7 +263,7 @@ onMounted(loadDashboard);
       <div>
         <h1 class="page-title">仪表盘</h1>
         <p class="page-subtitle">
-          这里汇总了当前真实业务链路的核心结果，可以直接作为角色化演示入口。
+          这里汇总了当前可运行模块的核心结果，可直接作为三类角色的演示起点。
         </p>
       </div>
       <el-button :loading="loading" @click="loadDashboard">刷新数据</el-button>
@@ -385,8 +386,12 @@ onMounted(loadDashboard);
           <strong>维护指标规则与系统入口，不直接处理业务预警。</strong>
         </div>
         <div class="admin-panel__item">
+          <span>推荐路径</span>
+          <strong>指标规则 -> 用户管理 -> 操作日志，逐步确认配置、权限与审计链路。</strong>
+        </div>
+        <div class="admin-panel__item">
           <span>建议下一步</span>
-          <strong>进入“指标规则”确认权重与评分区间，再回到首页观察总览变化。</strong>
+          <strong>先确认指标和规则口径，再检查管理员写操作是否已被日志准确记录。</strong>
         </div>
         <div class="admin-panel__item">
           <span>权限边界</span>

@@ -4,6 +4,7 @@ import com.cmj.risk.common.PageResult;
 import com.cmj.risk.component.RiskWorkflowStore;
 import com.cmj.risk.security.SecurityUser;
 import com.cmj.risk.service.AssessmentService;
+import com.cmj.risk.service.LogService;
 import com.cmj.risk.vo.assessment.AssessmentDetailVO;
 import com.cmj.risk.vo.assessment.AssessmentIndexResultVO;
 import com.cmj.risk.vo.assessment.AssessmentVO;
@@ -15,9 +16,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class AssessmentServiceImpl implements AssessmentService {
     private final RiskWorkflowStore riskWorkflowStore;
+    private final LogService logService;
 
-    public AssessmentServiceImpl(RiskWorkflowStore riskWorkflowStore) {
+    public AssessmentServiceImpl(RiskWorkflowStore riskWorkflowStore, LogService logService) {
         this.riskWorkflowStore = riskWorkflowStore;
+        this.logService = logService;
     }
 
     @Override
@@ -59,30 +62,29 @@ public class AssessmentServiceImpl implements AssessmentService {
 
     @Override
     public AssessmentDetailVO executeAssessment(Long riskDataId, SecurityUser operator) {
-        return toDetail(riskWorkflowStore.executeAssessment(riskDataId, operator));
+        RiskWorkflowStore.AssessmentRecord result = riskWorkflowStore.executeAssessment(riskDataId, operator);
+        logService.createLog("风险评估", "执行", "执行评估，风险等级：" + result.getRiskLevel() + "，风险得分：" + result.getTotalScore(), operator.getUsername(), operator.getUserId());
+        return toDetail(result);
     }
 
     private AssessmentDetailVO toDetail(RiskWorkflowStore.AssessmentRecord record) {
-        WarningDetailVO warningDetail = riskWorkflowStore.listWarnings("", "", null, "", "").stream()
-                .filter(item -> item.getAssessmentId().equals(record.getId()))
-                .findFirst()
-                .map(item -> WarningDetailVO.builder()
-                        .id(item.getId())
-                        .assessmentId(item.getAssessmentId())
-                        .riskDataId(item.getRiskDataId())
-                        .warningCode(item.getWarningCode())
-                        .warningLevel(item.getWarningLevel())
-                        .warningContent(item.getWarningContent())
-                        .businessNo(item.getBusinessNo())
-                        .customerName(item.getCustomerName())
-                        .warningStatus(item.getWarningStatus())
-                        .createTime(item.getCreateTime())
-                        .businessType(item.getBusinessType())
-                        .riskDesc(item.getRiskDesc())
-                        .totalScore(item.getTotalScore())
-                        .riskLevel(item.getRiskLevel())
-                        .build())
-                .orElse(null);
+        RiskWorkflowStore.WarningRecord warningRecord = riskWorkflowStore.findWarningByAssessmentId(record.getId());
+        WarningDetailVO warningDetail = warningRecord == null ? null : WarningDetailVO.builder()
+                .id(warningRecord.getId())
+                .assessmentId(warningRecord.getAssessmentId())
+                .riskDataId(warningRecord.getRiskDataId())
+                .warningCode(warningRecord.getWarningCode())
+                .warningLevel(warningRecord.getWarningLevel())
+                .warningContent(warningRecord.getWarningContent())
+                .businessNo(warningRecord.getBusinessNo())
+                .customerName(warningRecord.getCustomerName())
+                .warningStatus(warningRecord.getWarningStatus())
+                .createTime(warningRecord.getCreateTime())
+                .businessType(warningRecord.getBusinessType())
+                .riskDesc(warningRecord.getRiskDesc())
+                .totalScore(warningRecord.getTotalScore())
+                .riskLevel(warningRecord.getRiskLevel())
+                .build();
 
         return AssessmentDetailVO.builder()
                 .id(record.getId())

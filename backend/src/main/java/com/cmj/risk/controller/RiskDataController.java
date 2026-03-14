@@ -67,8 +67,8 @@ public class RiskDataController {
     }
 
     @DeleteMapping("/{id}")
-    public Result<Void> deleteRiskData(@PathVariable Long id) {
-        riskDataService.deleteRiskData(id);
+    public Result<Void> deleteRiskData(@PathVariable Long id, Authentication authentication) {
+        riskDataService.deleteRiskData(id, currentUser(authentication));
         return Result.success();
     }
 

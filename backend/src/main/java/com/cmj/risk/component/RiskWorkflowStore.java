@@ -1,52 +1,52 @@
 package com.cmj.risk.component;
 
 import com.cmj.risk.common.ErrorCode;
+import com.cmj.risk.entity.risk.RiskAssessmentIndexResultDO;
 import com.cmj.risk.exception.BusinessException;
+import com.cmj.risk.mapper.risk.RiskAssessmentIndexResultMapper;
+import com.cmj.risk.mapper.risk.RiskAssessmentMapper;
+import com.cmj.risk.mapper.risk.RiskWarningMapper;
+import com.cmj.risk.mapper.risk.WarningHandleRecordMapper;
 import com.cmj.risk.security.SecurityUser;
-import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class RiskWorkflowStore {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final RiskDemoStore riskDemoStore;
-    private final AtomicLong assessmentIdGenerator = new AtomicLong(1);
-    private final AtomicLong warningIdGenerator = new AtomicLong(1);
-    private final AtomicLong warningRecordIdGenerator = new AtomicLong(1);
-    private final Map<Long, AssessmentRecord> assessments = new LinkedHashMap<>();
-    private final Map<Long, WarningRecord> warnings = new LinkedHashMap<>();
+    private final RiskAssessmentMapper riskAssessmentMapper;
+    private final RiskAssessmentIndexResultMapper riskAssessmentIndexResultMapper;
+    private final RiskWarningMapper riskWarningMapper;
+    private final WarningHandleRecordMapper warningHandleRecordMapper;
 
-    public RiskWorkflowStore(RiskDemoStore riskDemoStore) {
+    public RiskWorkflowStore(
+            RiskDemoStore riskDemoStore,
+            RiskAssessmentMapper riskAssessmentMapper,
+            RiskAssessmentIndexResultMapper riskAssessmentIndexResultMapper,
+            RiskWarningMapper riskWarningMapper,
+            WarningHandleRecordMapper warningHandleRecordMapper
+    ) {
         this.riskDemoStore = riskDemoStore;
+        this.riskAssessmentMapper = riskAssessmentMapper;
+        this.riskAssessmentIndexResultMapper = riskAssessmentIndexResultMapper;
+        this.riskWarningMapper = riskWarningMapper;
+        this.warningHandleRecordMapper = warningHandleRecordMapper;
     }
 
-    @PostConstruct
-    public void init() {
-        assessments.clear();
-        warnings.clear();
-        assessmentIdGenerator.set(1);
-        warningIdGenerator.set(1);
-        warningRecordIdGenerator.set(1);
-        seedWorkflowData();
-    }
-
-    public synchronized List<AssessmentRecord> listAssessments(
+    public List<AssessmentRecord> listAssessments(
             String businessNo,
             String riskLevel,
             Integer assessmentStatus,
@@ -54,46 +54,37 @@ public class RiskWorkflowStore {
             String endTime,
             Long riskDataId
     ) {
-        String businessKeyword = normalize(businessNo);
-        return assessments.values().stream()
-                .filter(item -> businessKeyword.isBlank() || item.getBusinessNo().toLowerCase().contains(businessKeyword))
-                .filter(item -> riskLevel == null || riskLevel.isBlank() || item.getRiskLevel().equals(riskLevel))
-                .filter(item -> assessmentStatus == null || item.getAssessmentStatus().equals(assessmentStatus))
-                .filter(item -> riskDataId == null || item.getRiskDataId().equals(riskDataId))
-                .filter(item -> inDateRange(item.getAssessmentTime(), startTime, endTime))
-                .sorted(Comparator.comparing(AssessmentRecord::getAssessmentTime).reversed())
-                .map(this::copyAssessmentRecord)
+        return riskAssessmentMapper.listAssessments(normalize(businessNo), riskLevel, assessmentStatus, startTime, endTime, riskDataId)
+                .stream()
+                .map(this::copyAssessmentRecordWithoutIndexResults)
                 .toList();
     }
 
-    public synchronized AssessmentRecord getAssessment(Long assessmentId) {
-        AssessmentRecord assessmentRecord = assessments.get(assessmentId);
+    public AssessmentRecord getAssessment(Long assessmentId) {
+        AssessmentRecord assessmentRecord = riskAssessmentMapper.findById(assessmentId);
         if (assessmentRecord == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的评估记录");
         }
-        return copyAssessmentRecord(assessmentRecord);
+        AssessmentRecord copied = copyAssessmentRecordWithoutIndexResults(assessmentRecord);
+        copied.setIndexResults(copyIndexResults(riskAssessmentIndexResultMapper.listByAssessmentId(assessmentId)));
+        return copied;
     }
 
-    public synchronized AssessmentRecord executeAssessment(Long riskDataId, SecurityUser operator) {
+    @Transactional
+    public AssessmentRecord executeAssessment(Long riskDataId, SecurityUser operator) {
         RiskDemoStore.RiskDataRecord riskDataRecord = riskDemoStore.getRiskData(riskDataId);
-        List<RiskDemoStore.RiskIndexRecord> enabledIndexes = riskDemoStore.listEnabledRiskIndexes();
-        List<AssessmentIndexResultRecord> indexResults = buildAssessmentIndexResults(riskDataRecord, enabledIndexes);
+        List<AssessmentIndexResultRecord> indexResults = buildAssessmentIndexResults(riskDataRecord, riskDemoStore.listEnabledRiskIndexes());
 
-        for (AssessmentRecord assessment : assessments.values()) {
-            if (assessment.getRiskDataId().equals(riskDataId) && Objects.equals(assessment.getAssessmentStatus(), 1)) {
-                assessment.setAssessmentStatus(0);
-            }
-        }
+        riskAssessmentMapper.invalidateEffectiveByRiskDataId(riskDataId);
 
         String now = now();
-        Long assessmentId = assessmentIdGenerator.getAndIncrement();
         BigDecimal totalScore = indexResults.stream()
                 .map(AssessmentIndexResultRecord::getWeightedScore)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, BigDecimal.ROUND_HALF_UP);
         String riskLevel = resolveRiskLevel(totalScore);
+
         AssessmentRecord assessmentRecord = AssessmentRecord.builder()
-                .id(assessmentId)
                 .riskDataId(riskDataId)
                 .businessNo(riskDataRecord.getBusinessNo())
                 .customerName(riskDataRecord.getCustomerName())
@@ -106,82 +97,74 @@ public class RiskWorkflowStore {
                 .assessmentBy(operator.getUserId())
                 .assessmentByName(operator.getRealName())
                 .dataStatus(1)
-                .indexResults(copyIndexResults(indexResults))
                 .build();
-        assessments.put(assessmentId, assessmentRecord);
+        riskAssessmentMapper.insert(assessmentRecord);
+
+        if (!indexResults.isEmpty()) {
+            riskAssessmentIndexResultMapper.insertBatch(assessmentRecord.getId(), toIndexResultDOs(indexResults));
+        }
 
         if (!Objects.equals(riskLevel, "LOW")) {
-            Long warningId = warningIdGenerator.getAndIncrement();
-            WarningRecord warningRecord = WarningRecord.builder()
-                    .id(warningId)
-                    .assessmentId(assessmentId)
-                    .riskDataId(riskDataId)
-                    .warningCode(createWarningCode(warningId))
+            riskWarningMapper.insert(WarningRecord.builder()
+                    .assessmentId(assessmentRecord.getId())
+                    .warningCode(createWarningCode(now, assessmentRecord.getId()))
                     .warningLevel(riskLevel)
                     .warningContent(buildWarningContent(riskLevel, riskDataRecord.getCustomerName(), riskDataRecord.getBusinessNo()))
-                    .businessNo(riskDataRecord.getBusinessNo())
-                    .customerName(riskDataRecord.getCustomerName())
-                    .businessType(riskDataRecord.getBusinessType())
-                    .riskDesc(riskDataRecord.getRiskDesc())
-                    .totalScore(totalScore)
-                    .riskLevel(riskLevel)
                     .warningStatus(0)
                     .createTime(now)
-                    .handleRecords(new ArrayList<>())
-                    .build();
-            warnings.put(warningId, warningRecord);
+                    .build());
         }
 
         riskDemoStore.setRiskDataStatus(riskDataId, 1);
-        return getAssessment(assessmentId);
+        return getAssessment(assessmentRecord.getId());
     }
 
-    public synchronized List<WarningRecord> listWarnings(
+    public List<WarningRecord> listWarnings(
             String warningCode,
             String warningLevel,
             Integer warningStatus,
             String startTime,
             String endTime
     ) {
-        String warningKeyword = normalize(warningCode);
-        return warnings.values().stream()
-                .filter(item -> warningKeyword.isBlank() || item.getWarningCode().toLowerCase().contains(warningKeyword))
-                .filter(item -> warningLevel == null || warningLevel.isBlank() || item.getWarningLevel().equals(warningLevel))
-                .filter(item -> warningStatus == null || item.getWarningStatus().equals(warningStatus))
-                .filter(item -> inDateRange(item.getCreateTime(), startTime, endTime))
-                .sorted(Comparator.comparing(WarningRecord::getCreateTime).reversed())
-                .map(this::copyWarningRecord)
+        return riskWarningMapper.listWarnings(normalize(warningCode), warningLevel, warningStatus, startTime, endTime)
+                .stream()
+                .map(this::copyWarningRecordWithoutHandleRecords)
                 .toList();
     }
 
-    public synchronized WarningRecord getWarning(Long warningId) {
-        WarningRecord warningRecord = warnings.get(warningId);
+    public WarningRecord getWarning(Long warningId) {
+        WarningRecord warningRecord = riskWarningMapper.findById(warningId);
         if (warningRecord == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的预警记录");
         }
-        return copyWarningRecord(warningRecord);
+        WarningRecord copied = copyWarningRecordWithoutHandleRecords(warningRecord);
+        copied.setHandleRecords(copyHandleRecords(warningHandleRecordMapper.listByWarningId(warningId)));
+        return copied;
     }
 
-    public synchronized List<WarningHandleRecord> listWarningRecords(Long warningId) {
-        return getWarning(warningId).getHandleRecords().stream()
-                .sorted(Comparator.comparing(WarningHandleRecord::getHandleTime).reversed())
-                .toList();
+    public WarningRecord findWarningByAssessmentId(Long assessmentId) {
+        WarningRecord warningRecord = riskWarningMapper.findByAssessmentId(assessmentId);
+        return warningRecord == null ? null : copyWarningRecordWithoutHandleRecords(warningRecord);
     }
 
-    public synchronized void handleWarning(Long warningId, String handleOpinion, String handleResult, Integer nextStatus, SecurityUser operator) {
-        WarningRecord warningRecord = warnings.get(warningId);
+    public List<WarningHandleRecord> listWarningRecords(Long warningId) {
+        return copyHandleRecords(warningHandleRecordMapper.listByWarningId(warningId));
+    }
+
+    @Transactional
+    public void handleWarning(Long warningId, String handleOpinion, String handleResult, Integer nextStatus, SecurityUser operator) {
+        WarningRecord warningRecord = riskWarningMapper.findById(warningId);
         if (warningRecord == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "未找到对应的预警记录");
         }
         if (Objects.equals(warningRecord.getWarningStatus(), 2)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "该预警已处理完成，不能重复提交");
         }
-        if (nextStatus == null || (!Objects.equals(nextStatus, 1) && !Objects.equals(nextStatus, 2))) {
+        if (!Objects.equals(nextStatus, 1) && !Objects.equals(nextStatus, 2)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "下一状态只允许为处理中或已处理");
         }
 
-        WarningHandleRecord record = WarningHandleRecord.builder()
-                .id(warningRecordIdGenerator.getAndIncrement())
+        warningHandleRecordMapper.insert(WarningHandleRecord.builder()
                 .warningId(warningId)
                 .handleUserId(operator.getUserId())
                 .handleUserName(operator.getRealName())
@@ -189,197 +172,34 @@ public class RiskWorkflowStore {
                 .handleResult(handleResult)
                 .nextStatus(nextStatus)
                 .handleTime(now())
-                .build();
-        warningRecord.getHandleRecords().add(0, record);
-        warningRecord.setWarningStatus(nextStatus);
-    }
-
-    public synchronized DashboardSummary getDashboardSummary() {
-        long highRiskCount = assessments.values().stream()
-                .filter(item -> Objects.equals(item.getAssessmentStatus(), 1))
-                .filter(item -> Objects.equals(item.getRiskLevel(), "HIGH"))
-                .count();
-        return DashboardSummary.builder()
-                .riskDataCount(riskDemoStore.listRiskData("", "", "", null).size())
-                .assessmentCount(assessments.size())
-                .warningCount(warnings.size())
-                .handledWarningCount((int) warnings.values().stream().filter(item -> Objects.equals(item.getWarningStatus(), 2)).count())
-                .highRiskCount((int) highRiskCount)
-                .build();
-    }
-
-    public synchronized List<WarningRecord> listRecentWarnings(int limit) {
-        return warnings.values().stream()
-                .sorted(Comparator.comparing(WarningRecord::getCreateTime).reversed())
-                .limit(limit)
-                .map(this::copyWarningRecord)
-                .toList();
-    }
-
-    public synchronized List<RiskLevelStat> getRiskLevelStats(String startTime, String endTime, String riskLevel) {
-        List<AssessmentRecord> filtered = assessments.values().stream()
-                .filter(item -> Objects.equals(item.getAssessmentStatus(), 1))
-                .filter(item -> riskLevel == null || riskLevel.isBlank() || item.getRiskLevel().equals(riskLevel))
-                .filter(item -> inDateRange(item.getAssessmentTime(), startTime, endTime))
-                .toList();
-        return List.of(
-                new RiskLevelStat("LOW", (int) filtered.stream().filter(item -> item.getRiskLevel().equals("LOW")).count()),
-                new RiskLevelStat("MEDIUM", (int) filtered.stream().filter(item -> item.getRiskLevel().equals("MEDIUM")).count()),
-                new RiskLevelStat("HIGH", (int) filtered.stream().filter(item -> item.getRiskLevel().equals("HIGH")).count())
-        );
-    }
-
-    public synchronized List<WarningTrendStat> getWarningTrendStats(String startTime, String endTime, String riskLevel, Integer warningStatus) {
-        Map<String, WarningTrendStat> grouped = new LinkedHashMap<>();
-        listWarnings("", riskLevel, warningStatus, startTime, endTime).forEach(item -> {
-            String date = item.getCreateTime().substring(0, 10);
-            WarningTrendStat current = grouped.getOrDefault(date, new WarningTrendStat(date, 0, 0, 0));
-            current.total += 1;
-            if (Objects.equals(item.getWarningStatus(), 2)) {
-                current.handled += 1;
-            } else {
-                current.pending += 1;
-            }
-            grouped.put(date, current);
-        });
-        return grouped.values().stream()
-                .sorted(Comparator.comparing(item -> item.date))
-                .toList();
-    }
-
-    public synchronized List<HandleSummaryStat> getHandleSummaryStats(String startTime, String endTime, String riskLevel, Integer warningStatus) {
-        List<WarningRecord> filtered = listWarnings("", riskLevel, warningStatus, startTime, endTime);
-        return List.of(
-                new HandleSummaryStat(0, "待处理", (int) filtered.stream().filter(item -> Objects.equals(item.getWarningStatus(), 0)).count()),
-                new HandleSummaryStat(1, "处理中", (int) filtered.stream().filter(item -> Objects.equals(item.getWarningStatus(), 1)).count()),
-                new HandleSummaryStat(2, "已处理", (int) filtered.stream().filter(item -> Objects.equals(item.getWarningStatus(), 2)).count())
-        );
-    }
-
-    public synchronized boolean hasRiskDataHistory(Long riskDataId) {
-        return assessments.values().stream().anyMatch(item -> item.getRiskDataId().equals(riskDataId))
-                || warnings.values().stream().anyMatch(item -> item.getRiskDataId().equals(riskDataId));
-    }
-
-    private void seedWorkflowData() {
-        SecurityUser riskUser = SecurityUser.builder()
-                .userId(2L)
-                .username("risk-demo")
-                .password("")
-                .realName("演示风控员")
-                .roleCode("RISK_USER")
-                .roleName("风控人员")
-                .enabled(true)
-                .build();
-
-        seedAssessment(2L, "2026-03-09 11:35:00", riskUser, 1, false);
-        AssessmentRecord mediumAssessment = seedAssessment(3L, "2026-03-08 15:45:00", riskUser, 1, true);
-        AssessmentRecord highAssessment = seedAssessment(4L, "2026-03-07 16:30:00", riskUser, 1, true);
-        seedHistoricalAssessmentForRiskDataFive(riskUser);
-
-        WarningRecord pendingWarning = createSeedWarning(mediumAssessment, "WARN-20260308-001", 0, "2026-03-08 15:46:00");
-        WarningRecord handledWarning = createSeedWarning(highAssessment, "WARN-20260307-001", 2, "2026-03-07 16:31:00");
-        handledWarning.getHandleRecords().add(WarningHandleRecord.builder()
-                .id(warningRecordIdGenerator.getAndIncrement())
-                .warningId(handledWarning.getId())
-                .handleUserId(2L)
-                .handleUserName("演示风控员")
-                .handleOpinion("已联系客户补充抵押物并收紧授信额度。")
-                .handleResult("完成首次处置，风险已纳入重点跟踪。")
-                .nextStatus(2)
-                .handleTime("2026-03-08 09:30:00")
                 .build());
-        warnings.put(pendingWarning.getId(), pendingWarning);
-        warnings.put(handledWarning.getId(), handledWarning);
+        riskWarningMapper.updateStatus(warningId, nextStatus);
     }
 
-    private AssessmentRecord seedAssessment(Long riskDataId, String assessmentTime, SecurityUser operator, Integer assessmentStatus, boolean generateWarning) {
-        RiskDemoStore.RiskDataRecord riskDataRecord = riskDemoStore.getRiskData(riskDataId);
-        List<AssessmentIndexResultRecord> indexResults = buildAssessmentIndexResults(riskDataRecord, riskDemoStore.listEnabledRiskIndexes());
-        BigDecimal totalScore = indexResults.stream()
-                .map(AssessmentIndexResultRecord::getWeightedScore)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, BigDecimal.ROUND_HALF_UP);
-        AssessmentRecord assessmentRecord = AssessmentRecord.builder()
-                .id(assessmentIdGenerator.getAndIncrement())
-                .riskDataId(riskDataId)
-                .businessNo(riskDataRecord.getBusinessNo())
-                .customerName(riskDataRecord.getCustomerName())
-                .businessType(riskDataRecord.getBusinessType())
-                .riskDesc(riskDataRecord.getRiskDesc())
-                .totalScore(totalScore)
-                .riskLevel(resolveRiskLevel(totalScore))
-                .assessmentStatus(assessmentStatus)
-                .assessmentTime(assessmentTime)
-                .assessmentBy(operator.getUserId())
-                .assessmentByName(operator.getRealName())
-                .dataStatus(riskDataRecord.getDataStatus())
-                .indexResults(copyIndexResults(indexResults))
-                .build();
-        assessments.put(assessmentRecord.getId(), assessmentRecord);
-        return assessmentRecord;
+    public List<WarningRecord> listRecentWarnings(int limit) {
+        return riskWarningMapper.listRecentWarnings(limit).stream()
+                .map(this::copyWarningRecordWithoutHandleRecords)
+                .toList();
     }
 
-    private void seedHistoricalAssessmentForRiskDataFive(SecurityUser operator) {
-        RiskDemoStore.RiskDataRecord historyRiskData = RiskDemoStore.RiskDataRecord.builder()
-                .id(5L)
-                .businessNo("FRC-202603-005")
-                .customerName("云峰科技有限公司")
-                .businessType("保函业务")
-                .riskDesc("业务数据更新前的低风险评估记录。")
-                .dataStatus(1)
-                .createBy(2L)
-                .createByName("演示风控员")
-                .createTime("2026-03-06 10:05:00")
-                .updateTime("2026-03-10 10:00:00")
-                .indexValues(List.of(
-                        RiskDemoStore.RiskDataIndexValueRecord.builder().indexId(1L).indexValue(new BigDecimal("38")).build(),
-                        RiskDemoStore.RiskDataIndexValueRecord.builder().indexId(2L).indexValue(new BigDecimal("1.65")).build(),
-                        RiskDemoStore.RiskDataIndexValueRecord.builder().indexId(3L).indexValue(new BigDecimal("0")).build(),
-                        RiskDemoStore.RiskDataIndexValueRecord.builder().indexId(4L).indexValue(new BigDecimal("165")).build()
-                ))
-                .build();
-        List<AssessmentIndexResultRecord> indexResults = buildAssessmentIndexResults(historyRiskData, riskDemoStore.listEnabledRiskIndexes());
-        BigDecimal totalScore = indexResults.stream()
-                .map(AssessmentIndexResultRecord::getWeightedScore)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, BigDecimal.ROUND_HALF_UP);
-        assessments.put(assessmentIdGenerator.getAndIncrement(), AssessmentRecord.builder()
-                .id(assessmentIdGenerator.get() - 1)
-                .riskDataId(5L)
-                .businessNo(historyRiskData.getBusinessNo())
-                .customerName(historyRiskData.getCustomerName())
-                .businessType(historyRiskData.getBusinessType())
-                .riskDesc(historyRiskData.getRiskDesc())
-                .totalScore(totalScore)
-                .riskLevel(resolveRiskLevel(totalScore))
-                .assessmentStatus(0)
-                .assessmentTime("2026-03-10 10:10:00")
-                .assessmentBy(operator.getUserId())
-                .assessmentByName(operator.getRealName())
-                .dataStatus(1)
-                .indexResults(copyIndexResults(indexResults))
-                .build());
+    public boolean hasRiskDataHistory(Long riskDataId) {
+        return riskAssessmentMapper.countByRiskDataId(riskDataId) > 0 || riskWarningMapper.countByRiskDataId(riskDataId) > 0;
     }
 
-    private WarningRecord createSeedWarning(AssessmentRecord assessmentRecord, String warningCode, Integer warningStatus, String createTime) {
-        return WarningRecord.builder()
-                .id(warningIdGenerator.getAndIncrement())
-                .assessmentId(assessmentRecord.getId())
-                .riskDataId(assessmentRecord.getRiskDataId())
-                .warningCode(warningCode)
-                .warningLevel(assessmentRecord.getRiskLevel())
-                .warningContent(buildWarningContent(assessmentRecord.getRiskLevel(), assessmentRecord.getCustomerName(), assessmentRecord.getBusinessNo()))
-                .businessNo(assessmentRecord.getBusinessNo())
-                .customerName(assessmentRecord.getCustomerName())
-                .businessType(assessmentRecord.getBusinessType())
-                .riskDesc(assessmentRecord.getRiskDesc())
-                .totalScore(assessmentRecord.getTotalScore())
-                .riskLevel(assessmentRecord.getRiskLevel())
-                .warningStatus(warningStatus)
-                .createTime(createTime)
-                .handleRecords(new ArrayList<>())
-                .build();
+    public boolean hasEffectiveAssessment(Long riskDataId) {
+        return riskAssessmentMapper.findEffectiveByRiskDataId(riskDataId) != null;
+    }
+
+    @Transactional
+    public void invalidateEffectiveAssessments(Long riskDataId) {
+        riskAssessmentMapper.invalidateEffectiveByRiskDataId(riskDataId);
+    }
+
+    @Transactional
+    public void invalidateEffectiveAssessments(List<Long> riskDataIds) {
+        for (Long riskDataId : riskDataIds) {
+            invalidateEffectiveAssessments(riskDataId);
+        }
     }
 
     private List<AssessmentIndexResultRecord> buildAssessmentIndexResults(
@@ -391,7 +211,7 @@ public class RiskWorkflowStore {
             RiskDemoStore.RiskDataIndexValueRecord indexValueRecord = riskDataRecord.getIndexValues().stream()
                     .filter(item -> item.getIndexId().equals(riskIndexRecord.getId()))
                     .findFirst()
-                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "该业务数据缺少启用指标值，无法执行评估"));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INDEX_VALUE_INCOMPLETE, "该业务数据缺少启用指标值，无法执行评估"));
             RiskDemoStore.RiskRuleRecord matchedRule = riskDemoStore.listRiskRules(riskIndexRecord.getId()).stream()
                     .filter(rule -> indexValueRecord.getIndexValue().compareTo(rule.getScoreMin()) >= 0
                             && indexValueRecord.getIndexValue().compareTo(rule.getScoreMax()) <= 0)
@@ -414,6 +234,21 @@ public class RiskWorkflowStore {
         return results;
     }
 
+    private List<RiskAssessmentIndexResultDO> toIndexResultDOs(List<AssessmentIndexResultRecord> records) {
+        return records.stream()
+                .map(item -> RiskAssessmentIndexResultDO.builder()
+                        .indexId(item.getIndexId())
+                        .indexCode(item.getIndexCode())
+                        .indexName(item.getIndexName())
+                        .indexValue(item.getIndexValue())
+                        .weightValue(item.getWeightValue())
+                        .scoreValue(item.getScoreValue())
+                        .weightedScore(item.getWeightedScore())
+                        .warningLevel(item.getWarningLevel())
+                        .build())
+                .toList();
+    }
+
     private String resolveRiskLevel(BigDecimal totalScore) {
         if (totalScore.compareTo(new BigDecimal("80")) >= 0) {
             return "HIGH";
@@ -424,22 +259,12 @@ public class RiskWorkflowStore {
         return "LOW";
     }
 
-    private String createWarningCode(Long warningId) {
-        String date = now().substring(0, 10).replace("-", "");
-        return "WARN-" + date + "-" + String.format("%03d", warningId);
+    private String createWarningCode(String now, Long assessmentId) {
+        return "WARN-" + now.substring(0, 10).replace("-", "") + "-" + String.format("%03d", assessmentId);
     }
 
     private String buildWarningContent(String riskLevel, String customerName, String businessNo) {
-        String riskText = Objects.equals(riskLevel, "HIGH") ? "高风险" : "中风险";
-        return customerName + " 的业务 " + businessNo + " 评估结果为" + riskText + "，请尽快跟进。";
-    }
-
-    private boolean inDateRange(String value, String startTime, String endTime) {
-        String date = value.substring(0, 10);
-        if (startTime != null && !startTime.isBlank() && date.compareTo(startTime.substring(0, 10)) < 0) {
-            return false;
-        }
-        return endTime == null || endTime.isBlank() || date.compareTo(endTime.substring(0, 10)) <= 0;
+        return customerName + " 的业务 " + businessNo + " 评估结果为" + (Objects.equals(riskLevel, "HIGH") ? "高风险" : "中风险") + "，请尽快跟进。";
     }
 
     private String normalize(String value) {
@@ -450,7 +275,7 @@ public class RiskWorkflowStore {
         return LocalDateTime.now().format(DATE_TIME_FORMATTER);
     }
 
-    private AssessmentRecord copyAssessmentRecord(AssessmentRecord source) {
+    private AssessmentRecord copyAssessmentRecordWithoutIndexResults(AssessmentRecord source) {
         return AssessmentRecord.builder()
                 .id(source.getId())
                 .riskDataId(source.getRiskDataId())
@@ -465,11 +290,11 @@ public class RiskWorkflowStore {
                 .assessmentBy(source.getAssessmentBy())
                 .assessmentByName(source.getAssessmentByName())
                 .dataStatus(source.getDataStatus())
-                .indexResults(copyIndexResults(source.getIndexResults()))
+                .indexResults(new ArrayList<>())
                 .build();
     }
 
-    private WarningRecord copyWarningRecord(WarningRecord source) {
+    private WarningRecord copyWarningRecordWithoutHandleRecords(WarningRecord source) {
         return WarningRecord.builder()
                 .id(source.getId())
                 .assessmentId(source.getAssessmentId())
@@ -485,22 +310,14 @@ public class RiskWorkflowStore {
                 .riskLevel(source.getRiskLevel())
                 .warningStatus(source.getWarningStatus())
                 .createTime(source.getCreateTime())
-                .handleRecords(source.getHandleRecords().stream()
-                        .map(item -> WarningHandleRecord.builder()
-                                .id(item.getId())
-                                .warningId(item.getWarningId())
-                                .handleUserId(item.getHandleUserId())
-                                .handleUserName(item.getHandleUserName())
-                                .handleOpinion(item.getHandleOpinion())
-                                .handleResult(item.getHandleResult())
-                                .nextStatus(item.getNextStatus())
-                                .handleTime(item.getHandleTime())
-                                .build())
-                        .collect(ArrayList::new, ArrayList::add, ArrayList::addAll))
+                .handleRecords(new ArrayList<>())
                 .build();
     }
 
     private List<AssessmentIndexResultRecord> copyIndexResults(List<AssessmentIndexResultRecord> source) {
+        if (source == null) {
+            return new ArrayList<>();
+        }
         return source.stream()
                 .map(item -> AssessmentIndexResultRecord.builder()
                         .indexId(item.getIndexId())
@@ -511,6 +328,24 @@ public class RiskWorkflowStore {
                         .scoreValue(item.getScoreValue())
                         .weightedScore(item.getWeightedScore())
                         .warningLevel(item.getWarningLevel())
+                        .build())
+                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+    }
+
+    private List<WarningHandleRecord> copyHandleRecords(List<WarningHandleRecord> source) {
+        if (source == null) {
+            return new ArrayList<>();
+        }
+        return source.stream()
+                .map(item -> WarningHandleRecord.builder()
+                        .id(item.getId())
+                        .warningId(item.getWarningId())
+                        .handleUserId(item.getHandleUserId())
+                        .handleUserName(item.getHandleUserName())
+                        .handleOpinion(item.getHandleOpinion())
+                        .handleResult(item.getHandleResult())
+                        .nextStatus(item.getNextStatus())
+                        .handleTime(item.getHandleTime())
                         .build())
                 .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
     }
@@ -590,42 +425,5 @@ public class RiskWorkflowStore {
         private String handleResult;
         private Integer nextStatus;
         private String handleTime;
-    }
-
-    @Getter
-    @Setter
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class DashboardSummary {
-        private int riskDataCount;
-        private int assessmentCount;
-        private int warningCount;
-        private int handledWarningCount;
-        private int highRiskCount;
-    }
-
-    @AllArgsConstructor
-    @Getter
-    public static class RiskLevelStat {
-        private final String riskLevel;
-        private final int count;
-    }
-
-    @AllArgsConstructor
-    @Getter
-    public static class WarningTrendStat {
-        private final String date;
-        private int total;
-        private int pending;
-        private int handled;
-    }
-
-    @AllArgsConstructor
-    @Getter
-    public static class HandleSummaryStat {
-        private final int warningStatus;
-        private final String label;
-        private final int count;
     }
 }

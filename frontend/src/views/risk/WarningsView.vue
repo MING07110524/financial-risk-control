@@ -137,7 +137,7 @@ async function submitHandle() {
     );
 
     await warningService.handleWarning(detail.value.id, handleForm).then(ensureSuccess);
-    ElMessage.success("预警处理已保存");
+    ElMessage.success(handleForm.nextStatus === 2 ? "预警已处理完成" : "预警处理记录已保存");
     detail.value = ensureSuccess(await warningService.getWarningDetail(detail.value.id));
     handleRecords.value = ensureSuccess(await warningService.listWarningRecords(detail.value.id));
     await loadWarnings();

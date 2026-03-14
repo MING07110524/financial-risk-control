@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
-import { isCoreWorkflowMockMode, riskDataService, riskIndexService } from "@/services";
+import { useRoute, useRouter } from "vue-router";
+import { isMockMode, riskDataService, riskIndexService } from "@/services";
 import type {
   RiskDataCreateDTO,
   RiskDataDetailVO,
@@ -23,6 +23,7 @@ interface RiskDataFormIndexItem {
 }
 
 const router = useRouter();
+const route = useRoute();
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -61,7 +62,7 @@ const hasFilters = computed(() =>
 );
 const hasUnsavedChanges = computed(() => dialogVisible.value && formSnapshot.value !== createFormSnapshot());
 const showReassessmentHint = computed(() => formMode.value === "edit" && dialogRecordStatus.value === 1);
-const isHybridMode = computed(() => isCoreWorkflowMockMode);
+const showBackfillHint = computed(() => formMode.value === "edit" && dialogRecordStatus.value === 3);
 
 function createEmptyIndexValues(): RiskDataFormIndexItem[] {
   return enabledIndexes.value.map((item) => ({
@@ -101,8 +102,8 @@ function syncFormSnapshot() {
 }
 
 function buildGoAssessLabel(status: RiskDataStatus): string {
-  if (isHybridMode.value) {
-    return "评估下一阶段接通";
+  if (status === 3) {
+    return "去补录";
   }
   if (status === 1) {
     return "重新评估";
@@ -166,19 +167,16 @@ async function closeDialog() {
 }
 
 async function promptNextStep(savedData: RiskDataDetailVO, mode: "create" | "edit") {
-  if (isHybridMode.value) {
-    ElMessage.info("风险数据已经保存到真实后端。本轮请先验证真实增删改查，评估状态同步将在下一阶段接通。");
-    return;
-  }
-
-  // Offer the next logical action right after save, because risk data entry is
-  // usually followed by assessment in this demo flow. / 保存后直接提供“去评估”
-  // 是为了让录入 -> 评估这条最小闭环更顺，不需要用户自己再回列表找按钮。
   const title = mode === "create" ? "风险数据已保存" : "风险数据已更新";
+  const isBackfillRecovery = dialogRecordStatus.value === 3;
   const message =
-    savedData.dataStatus === 2
-      ? `业务 ${savedData.businessNo} 已更新，并自动标记为“待重评”。是否立即前往评估？`
-      : `业务 ${savedData.businessNo} 已保存。是否立即前往评估？`;
+    isBackfillRecovery && savedData.dataStatus === 0
+      ? `业务 ${savedData.businessNo} 已完成补录，当前状态恢复为“待评估”。是否立即前往评估？`
+      : isBackfillRecovery && savedData.dataStatus === 2
+        ? `业务 ${savedData.businessNo} 已完成补录，当前状态恢复为“待重评”。是否立即前往评估？`
+        : savedData.dataStatus === 2
+          ? `业务 ${savedData.businessNo} 已更新，并自动标记为“待重评”。是否立即前往评估？`
+          : `业务 ${savedData.businessNo} 已保存。是否立即前往评估？`;
 
   try {
     await ElMessageBox.confirm(message, title, {
@@ -254,6 +252,11 @@ async function bootstrap() {
     const page = ensureSuccess(await riskDataService.pageRiskData(query));
     total.value = page.total;
     records.value = page.records;
+    const editId = typeof route.query.editId === "string" ? Number(route.query.editId) : null;
+    if (editId && !Number.isNaN(editId)) {
+      await openEditDialog({ id: editId } as RiskDataVO);
+      await router.replace({ path: "/risk/data" });
+    }
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -329,10 +332,18 @@ async function submitForm() {
     let savedData: RiskDataDetailVO;
     if (formMode.value === "create") {
       savedData = ensureSuccess(await riskDataService.createRiskData(payload));
-      ElMessage.success("风险数据已保存");
+      ElMessage.success("风险数据新增成功");
     } else if (currentEditId.value !== null) {
       savedData = ensureSuccess(await riskDataService.updateRiskData(currentEditId.value, payload));
-      ElMessage.success(savedData.dataStatus === 2 ? "风险数据已更新，当前状态变为待重评" : "风险数据已更新");
+      if (dialogRecordStatus.value === 3 && savedData.dataStatus === 0) {
+        ElMessage.success("补录完成，当前状态变为待评估");
+      } else if (dialogRecordStatus.value === 3 && savedData.dataStatus === 2) {
+        ElMessage.success("补录完成，当前状态变为待重评");
+      } else if (savedData.dataStatus === 2) {
+        ElMessage.success("风险数据已更新，当前状态变为待重评");
+      } else {
+        ElMessage.success("风险数据编辑成功");
+      }
     } else {
       return;
     }
@@ -361,7 +372,7 @@ async function removeRiskData(row: RiskDataVO) {
     );
 
     await riskDataService.deleteRiskData(row.id).then(ensureSuccess);
-    ElMessage.success("删除成功");
+    ElMessage.success("风险数据删除成功");
     await loadRiskData();
   } catch (error) {
     if (error !== "cancel") {
@@ -371,8 +382,8 @@ async function removeRiskData(row: RiskDataVO) {
 }
 
 function goToAssess(row: RiskDataVO) {
-  if (isHybridMode.value) {
-    ElMessage.warning("当前已切到真实风险数据接口，但评估与预警尚未同步切到真实后端，请在下一阶段继续联调。");
+  if (row.dataStatus === 3) {
+    void openEditDialog(row);
     return;
   }
   void router.push({
@@ -402,10 +413,12 @@ onMounted(() => {
     </div>
 
     <el-alert
-      v-if="isHybridMode"
-      type="success"
+      type="info"
       :closable="false"
-      title="当前页面已切到真实后端接口：列表、详情、新增、编辑、删除都来自 backend。评估与预警仍是 mock，本轮先专注验证真实风险数据模块。"
+      :title="isMockMode
+        ? '当前为 Mock 环境：风险数据的新增、编辑、评估与预警流转都只作用于本地 Mock 数据。'
+        : '当前为真实后端环境：风险数据的新增、编辑、评估与预警流转都会走真实接口并进入真实业务链。'
+      "
     />
 
     <el-card class="section-card" shadow="never">
@@ -417,6 +430,7 @@ onMounted(() => {
           <el-option label="待评估" :value="0" />
           <el-option label="已评估" :value="1" />
           <el-option label="待重评" :value="2" />
+          <el-option label="待补录" :value="3" />
         </el-select>
         <div class="filter-actions">
           <el-button type="primary" @click="handleSearch">查询</el-button>
@@ -451,7 +465,7 @@ onMounted(() => {
             <div class="row-actions">
               <el-button link type="primary" @click="openDetailDialog(row)">详情</el-button>
               <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
-              <el-button link type="warning" :disabled="isHybridMode" @click="goToAssess(row)">{{ buildGoAssessLabel(row.dataStatus) }}</el-button>
+              <el-button link type="warning" @click="goToAssess(row)">{{ buildGoAssessLabel(row.dataStatus) }}</el-button>
               <el-button link type="danger" @click="removeRiskData(row)">删除</el-button>
             </div>
           </template>
@@ -480,6 +494,13 @@ onMounted(() => {
     >
       <el-form label-position="top">
         <el-alert
+          v-if="showBackfillHint"
+          type="error"
+          :closable="false"
+          class="dialog-alert"
+          title="当前业务缺少新启用指标值。补录完成后，系统会把它恢复到“待评估”或“待重评”。"
+        />
+        <el-alert
           v-if="showReassessmentHint"
           type="warning"
           :closable="false"
@@ -487,14 +508,7 @@ onMounted(() => {
           title="当前业务已有有效评估记录。保存修改后，这条业务会自动进入“待重评”状态。"
         />
         <el-alert
-          v-if="isHybridMode"
-          type="info"
-          :closable="false"
-          class="dialog-alert"
-          title="当前保存动作会写入真实后端。评估与预警状态仍由下一阶段接通，不在本轮验收范围内。"
-        />
-        <el-alert
-          v-else-if="formMode === 'create'"
+          v-if="formMode === 'create'"
           type="info"
           :closable="false"
           class="dialog-alert"
@@ -588,7 +602,15 @@ onMounted(() => {
         </div>
 
         <el-alert
-          v-if="detail.dataStatus === 2"
+          v-if="detail.dataStatus === 3"
+          type="error"
+          :closable="false"
+          class="dialog-alert"
+          :title="`这条业务当前缺少启用指标值：${(detail.missingEnabledIndexNames ?? []).join('、') || '请返回编辑页补录'}`"
+        />
+
+        <el-alert
+          v-else-if="detail.dataStatus === 2"
           type="warning"
           :closable="false"
           class="dialog-alert"
@@ -603,7 +625,7 @@ onMounted(() => {
         </el-table>
 
         <div class="detail-actions">
-          <el-button type="primary" :disabled="isHybridMode" @click="goToAssess(detail)">去评估</el-button>
+          <el-button type="primary" @click="goToAssess(detail)">去评估</el-button>
           <el-button @click="detailVisible = false">关闭</el-button>
         </div>
       </div>

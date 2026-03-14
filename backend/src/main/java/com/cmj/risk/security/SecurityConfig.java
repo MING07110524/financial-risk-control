@@ -1,7 +1,6 @@
 package com.cmj.risk.security;
 
 import com.cmj.risk.config.JwtProperties;
-import com.cmj.risk.config.AuthDemoUsersProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, AuthDemoUsersProperties.class})
+@EnableConfigurationProperties(JwtProperties.class)
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;

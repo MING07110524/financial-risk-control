@@ -1,4 +1,5 @@
 import type { CurrentUser, RoleCode } from "@/types/auth";
+import type { LogVO } from "@/types/system";
 import type {
   AssessmentDetailVO,
   RiskDataDetailVO,
@@ -30,6 +31,7 @@ export interface MockDb {
   riskData: RiskDataDetailVO[];
   assessments: MockAssessment[];
   warnings: MockWarning[];
+  logs: LogVO[];
   nextIds: Record<string, number>;
 }
 

@@ -30,11 +30,10 @@ public class AuthController {
 
     @PostMapping("/logout")
     public Result<Void> logout(Authentication authentication) {
-        Long userId = null;
-        if (authentication != null && authentication.getPrincipal() instanceof SecurityUser securityUser) {
-            userId = securityUser.getUserId();
-        }
-        authService.logout(userId);
+        SecurityUser securityUser = authentication != null && authentication.getPrincipal() instanceof SecurityUser principal
+                ? principal
+                : null;
+        authService.logout(securityUser);
         return Result.success();
     }
 

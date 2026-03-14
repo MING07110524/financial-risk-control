@@ -2,7 +2,7 @@
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { isAuthMockMode, isCoreWorkflowMockMode, isMockMode } from "@/services";
+import { isMockMode } from "@/services";
 import { useUserStore } from "@/stores/user";
 import { getErrorMessage } from "@/utils/result";
 
@@ -16,9 +16,9 @@ const form = reactive({
 
 const loading = ref(false);
 const demoAccounts = [
-  { label: "管理员", username: "admin-demo", description: "查看指标规则与系统入口" },
-  { label: "风控人员", username: "risk-demo", description: "完整演示录入、评估、预警处理闭环" },
-  { label: "管理人员", username: "manager-demo", description: "只读查看预警与统计结果" },
+  { label: "管理员", username: "admin-demo", description: "维护指标规则、用户管理与操作日志" },
+  { label: "风控人员", username: "risk-demo", description: "完整演示录入、评估、预警处理与统计回流" },
+  { label: "管理人员", username: "manager-demo", description: "聚焦预警查看与统计分析" },
 ];
 
 async function submit() {
@@ -29,8 +29,8 @@ async function submit() {
     await router.push("/dashboard");
   } catch (error) {
     const message = getErrorMessage(error);
-    if (!isAuthMockMode && /Network Error|timeout|fetch/i.test(message)) {
-      ElMessage.error("真实认证后端暂未启动，请先运行 backend，再重新登录。");
+    if (!isMockMode && /Network Error|timeout|fetch/i.test(message)) {
+      ElMessage.error("真实后端暂未启动，请先运行 backend，再重新登录。");
     } else {
       ElMessage.error(message);
     }
@@ -52,32 +52,24 @@ async function submitDemoLogin(username: string) {
       <p class="login-copy__eyebrow">最小闭环原型</p>
       <h1 class="login-copy__title">金融风控管理系统</h1>
       <p class="login-copy__text">
-        当前系统已经支持真实后端认证，并会按阶段把业务链逐步切到真实接口。
-        现在这套演示账号可直接用于体验完整风控闭环。
+        默认环境已切到真实后端联调，三类演示账号可以直接覆盖风控处理、管理查看与管理员配置审计三条路径。
+        如需本地纯演示回退，请使用独立的 mock 环境启动前端。
       </p>
       <div class="login-copy__panel">
-        <strong>演示说明</strong>
-        <span v-if="isCoreWorkflowMockMode">支持三种角色登录。认证已走真实后端，部分业务链路仍保留 mock 过渡。</span>
-        <span v-else>支持三种角色登录。认证与核心风控业务链都已切到真实后端。</span>
+        <strong>环境说明</strong>
+        <span v-if="isMockMode">当前为独立 Mock 环境，账号会创建本地演示会话，页面数据也全部来自本地 Mock。</span>
+        <span v-else>当前为默认真实后端环境，三类演示账号都会走真实登录态与真实业务接口。</span>
       </div>
       <div class="login-copy__panel login-copy__panel--guide">
         <strong>推荐体验顺序</strong>
         <span>risk-demo：风险数据 -> 风险评估 -> 预警处理 -> 统计回流</span>
-        <span>manager-demo：预警详情 -> 统计分析 -> 首页洞察</span>
-        <span>admin-demo：指标规则 -> 用户管理占位 -> 日志占位</span>
+        <span>manager-demo：预警查看 -> 统计分析</span>
+        <span>admin-demo：指标规则 -> 用户管理 -> 操作日志</span>
       </div>
-      <div v-if="isMockMode" class="demo-accounts">
+      <div class="demo-accounts">
         <div class="demo-accounts__header">
           <strong>演示账号快捷入口</strong>
-          <span>
-            {{
-              isAuthMockMode
-                ? "点击即可直接建立 mock 会话"
-                : isCoreWorkflowMockMode
-                  ? "点击后会调用真实后端登录，并进入当前阶段已接通的业务页面"
-                  : "点击后会调用真实后端登录，并进入完整真实业务链"
-            }}
-          </span>
+          <span>{{ isMockMode ? "点击即可建立本地 Mock 会话并进入本地数据链路" : "点击后会调用真实后端登录，并进入对应真实业务链" }}</span>
         </div>
         <button
           v-for="account in demoAccounts"
@@ -97,7 +89,7 @@ async function submitDemoLogin(username: string) {
       <template #header>
         <div>
           <h2 class="login-card__title">登录系统</h2>
-          <p class="login-card__subtitle">可以手动输入，也可以直接使用左侧演示账号</p>
+          <p class="login-card__subtitle">可手动输入，也可直接使用左侧演示账号快速进入对应路径</p>
         </div>
       </template>
 
@@ -106,14 +98,13 @@ async function submitDemoLogin(username: string) {
           <el-input v-model="form.username" placeholder="请输入用户名，例如 risk-demo" />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" show-password placeholder="演示模式下输入任意非空密码即可" />
+          <el-input v-model="form.password" type="password" show-password placeholder="三类演示账号统一使用密码 demo" />
         </el-form-item>
         <el-button type="primary" class="login-card__action" :loading="loading" @click="submit">
           登录
         </el-button>
-        <p v-if="isMockMode && isAuthMockMode" class="login-card__hint">当前为全 Mock 模式，账号密码仅用于演示交互，不对应真实后端账号。</p>
-        <p v-else-if="isCoreWorkflowMockMode" class="login-card__hint">当前为“认证真实 / 部分业务 Mock”模式。三类演示账号统一使用密码：demo。</p>
-        <p v-else class="login-card__hint">当前为“核心链真实后端”模式。三类演示账号统一使用密码：demo。</p>
+        <p v-if="isMockMode" class="login-card__hint">当前为独立 Mock 环境，账号密码仅用于本地演示交互，不对应真实后端账号。</p>
+        <p v-else class="login-card__hint">当前为默认真实后端环境。三类演示账号统一使用密码：demo。</p>
       </el-form>
     </el-card>
   </div>

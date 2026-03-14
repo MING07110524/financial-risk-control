@@ -2,13 +2,14 @@ package com.cmj.risk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.cmj.risk.security.SecurityUser;
+import com.cmj.risk.component.RiskDemoStore;
 import com.cmj.risk.dto.risk.RiskDataCreateDTO;
 import com.cmj.risk.dto.risk.RiskDataIndexValueItemDTO;
-import com.cmj.risk.service.RiskDataService;
 import com.cmj.risk.service.AssessmentService;
+import com.cmj.risk.service.RiskDataService;
 import com.cmj.risk.service.StatisticsService;
 import com.cmj.risk.service.WarningService;
+import com.cmj.risk.security.SecurityUser;
 import com.cmj.risk.vo.assessment.AssessmentDetailVO;
 import com.cmj.risk.vo.statistics.DashboardStatisticsVO;
 import com.cmj.risk.vo.warning.WarningVO;
@@ -17,8 +18,10 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 
 @SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class RiskWorkflowIntegrationTests {
 
     @Autowired
@@ -32,6 +35,9 @@ class RiskWorkflowIntegrationTests {
 
     @Autowired
     private StatisticsService statisticsService;
+
+    @Autowired
+    private RiskDemoStore riskDemoStore;
 
     @Test
     void executeAssessmentShouldGenerateWarningAndAffectStatistics() {
@@ -71,6 +77,24 @@ class RiskWorkflowIntegrationTests {
 
         assertThat(assessmentDetailVO.getRiskLevel()).isEqualTo("MEDIUM");
         assertThat(assessmentDetailVO.getWarningGenerated()).isTrue();
+    }
+
+    @Test
+    void historicalAssessmentDetailShouldNotDriftAfterRuleUpdate() {
+        AssessmentDetailVO before = assessmentService.getAssessmentDetail(2L);
+
+        riskDemoStore.updateRiskRule(2L, RiskDemoStore.RiskRuleRecord.builder()
+                .scoreMin(new BigDecimal("40.01"))
+                .scoreMax(new BigDecimal("70.00"))
+                .scoreValue(new BigDecimal("10.00"))
+                .warningLevel("LOW")
+                .build());
+
+        AssessmentDetailVO after = assessmentService.getAssessmentDetail(2L);
+
+        assertThat(after.getTotalScore()).isEqualByComparingTo(before.getTotalScore());
+        assertThat(after.getRiskLevel()).isEqualTo(before.getRiskLevel());
+        assertThat(after.getIndexResults()).usingRecursiveComparison().isEqualTo(before.getIndexResults());
     }
 
     private RiskDataIndexValueItemDTO item(Long indexId, String value) {

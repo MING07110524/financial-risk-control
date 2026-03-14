@@ -2,7 +2,7 @@ import type { PageQuery } from "@/types/common";
 import type { RoleCode } from "@/types/auth";
 
 export type UserStatus = 0 | 1;
-export type RiskDataStatus = 0 | 1 | 2;
+export type RiskDataStatus = 0 | 1 | 2 | 3;
 export type AssessmentStatus = 0 | 1;
 export type WarningStatus = 0 | 1 | 2;
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
@@ -38,6 +38,25 @@ export interface RiskIndexVO {
   status: UserStatus;
 }
 
+export interface RiskIndexCreateDTO {
+  indexName: string;
+  indexCode: string;
+  weightValue: number | null;
+  indexDesc: string;
+  status: UserStatus;
+}
+
+export interface RiskIndexUpdateDTO {
+  indexName: string;
+  indexCode: string;
+  weightValue: number | null;
+  indexDesc: string;
+}
+
+export interface RiskIndexStatusDTO {
+  status: UserStatus;
+}
+
 export interface RiskRuleVO {
   id: number;
   indexId: number;
@@ -45,6 +64,21 @@ export interface RiskRuleVO {
   scoreMin: number;
   scoreMax: number;
   scoreValue: number;
+  warningLevel: RiskLevel;
+}
+
+export interface RiskRuleCreateDTO {
+  indexId: number;
+  scoreMin: number | null;
+  scoreMax: number | null;
+  scoreValue: number | null;
+  warningLevel: RiskLevel;
+}
+
+export interface RiskRuleUpdateDTO {
+  scoreMin: number | null;
+  scoreMax: number | null;
+  scoreValue: number | null;
   warningLevel: RiskLevel;
 }
 
@@ -91,6 +125,7 @@ export interface RiskDataIndexValueVO {
 
 export interface RiskDataDetailVO extends RiskDataVO {
   indexValues: RiskDataIndexValueVO[];
+  missingEnabledIndexNames?: string[];
 }
 
 export interface AssessmentQuery extends PageQuery {
